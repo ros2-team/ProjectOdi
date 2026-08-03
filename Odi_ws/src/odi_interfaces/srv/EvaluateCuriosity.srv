@@ -1,0 +1,11 @@
+
+odi_interfaces/ObjectCandidate candidate
+bool previously_seen
+int32 observation_count
+float32 novelty_score
+float32 risk_score
+bool approach_possible
+---
+bool success
+odi_interfaces/CuriosityDecision decision
+string message

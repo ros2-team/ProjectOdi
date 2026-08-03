@@ -1,0 +1,36 @@
+
+# ROS2 build output
+Odi_ws/build/
+Odi_ws/install/
+Odi_ws/log/
+
+# 기존 작업 백업
+Odi_ws_backup/
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Environment files
+.env
+*.env
+
+# VS Code / IDE
+.vscode/
+.idea/
+
+# Node.js
+web_ws/node_modules/
+web_ws/dist/
+web_ws/build/
+
+# Database local files
+db_ws/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.swp
+*~

@@ -1,0 +1,9 @@
+
+odi_interfaces/ObjectCandidate target
+odi_interfaces/CuriosityDecision decision
+---
+odi_interfaces/ObservationResult result
+---
+string state
+float32 progress
+string message

@@ -1,0 +1,11 @@
+
+string session_id
+string mode
+---
+string status
+string visited_area_id
+string message
+---
+string current_area_id
+geometry_msgs/PoseStamped current_goal
+float32 progress

@@ -1,0 +1,8 @@
+
+string	candidate_id
+string	class_name
+string	status
+string	failure_reason
+string	representative_image_path
+builtin_interfaces/Time started_at
+builtin_interfaces/Time completed_at
