@@ -101,8 +101,7 @@ class BehaviorExecutorNode(Node):
             )
             return
         # 우선순위 4 : 호기심 판단이 완료된 물체 후보
-        if(self.blackboard.has_candidate()
-           and self.blackboard.has_curiosity_decision()):
+        if(self.blackboard.current_candidate is not None and self.blackboard.curiosity_decision is not None):
             decision = self.blackboard.curiosity_decision
             if decision.action != "IGNORE":
                 self.set_behavior(
@@ -113,7 +112,7 @@ class BehaviorExecutorNode(Node):
                 return
             self.blackboard.clear_candidate()
         #우선순위 5 : 판단하지 않은 새 물체 후보
-        if self.blackboard.has_candidate():
+        if self.blackboard.current_candidate is not None:
             self.set_behavior(
                 BehaviorName.EVALUATE_CURIOSITY,
                 BehaviorStatus.RUNNING,
@@ -206,7 +205,6 @@ def main(args=None) -> None:
 
 if __name__ == "__main__":
     main()
-
 
 
 

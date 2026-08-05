@@ -64,14 +64,6 @@ class OdiBlackboard:
         self.current_candidate = None
         self.curiosity_decision = None
 
-    def has_candidate(self) -> bool:
-        return self.current_candidate is not None
-
-    def has_curiosity_decision(self) -> bool:
-        return self.curiosity_decision is not None
-
-
-
 
 
 
