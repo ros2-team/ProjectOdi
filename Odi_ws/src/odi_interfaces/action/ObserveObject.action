@@ -1,9 +1,9 @@
 
-odi_interfaces/ObjectCandidate target
+odi_interfaces/EncounterResult encounter
 odi_interfaces/CuriosityDecision decision
 ---
 odi_interfaces/ObservationResult result
 ---
-string state
+string stage
 float32 progress
 string message
