@@ -1,9 +1,29 @@
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import Optional
 
 from odi_interfaces.msg import CuriosityDecision
-from odi_interfaces.msg import ObjectCandidate
+from odi_interfaces.msg import DetectedObject
+from odi_interfaces.msg import EncounterResult
+from odi_interfaces.msg import ObservationResult
+
+class ObjectProcessStage(str, Enum):
+    NONE = "NONE"
+    DETECTED = "DETECTED"
+
+    ENCOUNTERING = "ENCOUNTERING"
+    ENCOUNTER_COMPLETED = "ENCOUNTER_COMPLETED"
+
+    EVALUATING_CURIOSITY = "EVALUATING_CURIOSITY"
+    CURIOSITY_EVALUATED = "CURIOSITY_EVALUATED"
+
+    OBSERVING = "OBSERVING"
+    OBSERVATION_COMPLETED = "OBSERVATION_COMPLETED"
+
+    IGNORED = "IGNORED"
+    FINISHED = "FINISHED"
+    FAILED = "FAILED"
 
 @dataclass
 class OdiBlackboard:
@@ -21,48 +41,49 @@ class OdiBlackboard:
     exploration_paused: bool = False
     exploration_completed: bool = False
 
-    # Curiosity
-    current_candidate: Optional[ObjectCandidate] = None
+    detection_locked: bool = False
+
+    pending_objects: list[DetectedObject] = field(
+        default_factory = list
+    )
+
+    current_object: Optional[DetectedObject] = None
+    current_stage: ObjectProcessStage = ObjectProcessStage.NONE
+
+    encounter_result: Optional[DetectedObject] = None
     curiosity_decision: Optional[CuriosityDecision] = None
+    observation_result: Optional[ObservationResult] = None
 
-    # Observation
-    Observation_active: bool = False
-    Observation_completed: bool = False
-    Observation_failed: bool = False
-
-    # Returning
     return_requested: bool = False
     return_completed: bool = False
 
-    # Reflection
     reflection_active: bool = False
     reflection_completed: bool = False
 
-    def reset_runtime_state(self) -> None:
+    def reset(self) -> None:
         self.emergency = False
         self.battery_low = False
         self.system_ready = False
 
         self.exploration_active = False
-        self.exploration_completed = False
         self.exploration_paused = False
+        self.exploration_completed = False
 
-        self.current_candidate = None
+        self.detection_locked = False
+        self.pending_objects.clear()
+
+        self.current_object = None
+        self.current_stage = ObjectProcessStage.NONE
+
+        self.encounter_result = None
         self.curiosity_decision = None
-
-        self.Observation_active = False
-        self.Observation_completed = False
-        self.Observation_failed = False
+        self.observation_result = None
 
         self.return_requested = False
         self.return_completed = False
 
         self.reflection_active = False
         self.reflection_completed = False
-
-    def clear_candidate(self) -> None:
-        self.current_candidate = None
-        self.curiosity_decision = None
 
 
 
