@@ -9,58 +9,71 @@ class CuriosityEngineNode(Node):
     def __init__(self):
         super().__init__('curiosity_engine_node')
 
-        # 더미 메모리 DB
-        self.dummy_memory_db = {
-            1: MemoryInfo(visit_count=0, change=True),
-            2: MemoryInfo(visit_count=0, change=True),    # 방문 횟수 0으로 변경
-            3: MemoryInfo(visit_count=0, change=True)     # 방문 횟수 0으로 변경
-        }
+        # 더미 메모리 DB (초기 상태)
+        self.dummy_memory_db = {}
 
         # 로직 클래스 인스턴스화
         self.calculator = CuriosityCalculator()  # 점수 계산기
-        self.policy = CuriosityPolicy()          # 행동 결정기 
+        self.policy = CuriosityPolicy()          # 행동 결정기
 
-        # 2초마다 실행되는 더미 루프
+        # 2초 주기로 타이머 콜백 실행
         self.timer = self.create_timer(2.0, self.timer_callback)
         self.get_logger().info("Curiosity Engine Node Started")
 
     def timer_callback(self):
-        # 더미 데이터 생성
+        # 비전 AI 노드에서 수신되었다고 가정하는 더미 입력 데이터
         dummy_objects = [
-            ObjectCandidate(track_id=1, class_name="bottle", confidence=0.42),
-            ObjectCandidate(track_id=2, class_name="cup", confidence=0.43),
-            ObjectCandidate(track_id=3, class_name="chair", confidence=0.98)
+            # 예시: ID 1번 물체 (상태가 DIRTY로 새로 감지된 bottle)
+            ObjectCandidate(
+                track_id=1, confidence=0.55, object_name="bottle",
+                primary_color="blue", secondary_color="white", material="plastic",
+                shape="cylinder", condition="DIRTY"
+            )
         ]
 
         for candidate in dummy_objects:
+            # DB에 ID가 전혀 없으면 최초 발견된 물체(is_new=True)로 DB 인스턴스 생성
             if candidate.track_id not in self.dummy_memory_db:
-                self.dummy_memory_db[candidate.track_id] = MemoryInfo(visit_count=0, change=False)
+                self.dummy_memory_db[candidate.track_id] = MemoryInfo(is_new=True)
 
             memory = self.dummy_memory_db[candidate.track_id]
-            
-            # 1. 점수 계산
+
+            # 1. 과거 DB(memory)와 현재 실시간 데이터(candidate) 비교 점수 계산
             calc_result = self.calculator.calculate_score(candidate, memory)
-            # 2. 행동 결정
+            
+            # 2. 산출된 점수로 행동 결정
             decision = self.policy.decide_action(calc_result["score"])
+
             # 3. 콘솔 로그 출력
             self.print_log(candidate, memory, calc_result, decision)
 
-            #접근해서 조사를 수행했거나 관찰을 진행한 경우
-            if decision in ["APPROACH_AND_INSPECT", "OBSERVE_FROM_DISTANCE"]:
-                memory.visit_count += 1  # 방문 횟수 증가 -> Novelty 감소
-                memory.change = False    # 변화 상태 확인 완료 처리 -> Change 가중치 제거
+            # 4. IGNORE가 아닌 유의미한 관찰 행동을 수행한 경우 DB 최신화
+            if decision != "IGNORE":
+                memory.visit_count += 1    # 방문 횟수 증가 -> 다음번 Visit Score 감소
+                memory.is_new = False      # 최초 발견 확인 완료 처리 -> 다음번 Novelty 점수 제거(0점)
+                
+                # [중요] 변한 속성을 확인 완료했으므로 DB 상태를 현재 상태로 동기화 (Change Reset)
+                memory.primary_color = candidate.primary_color
+                memory.secondary_color = candidate.secondary_color
+                memory.material = candidate.material
+                memory.shape = candidate.shape
+                memory.condition = candidate.condition
 
     def print_log(self, candidate, memory, result, decision):
+        """디버깅을 위한 출력 로그 포맷"""
         log_msg = (
             f"\n==============================\n"
-            f"Object : {candidate.class_name} (ID: {candidate.track_id})\n"  # 물체 고유번호 
-            f"Visit Count : {memory.visit_count}\n"                          # 물체 방문/관찰한 횟수 
-            f"Confidence : {candidate.confidence}\n"                         # yolo 인식 신뢰도
-            f"Novelty : {result['novelty']}\n"                               # 참신성 (방문횟수가 적을수록 높으ㅁ)
-            f"Uncertainty : {result['uncertainty']}\n"                       # 불확실성 (yolo 인식 신뢰도가 낮을수록 높음 )
-            f"Change : {memory.change}\n\n"                                  # 이전 관찰 시점에서 위치 변화 여부 
-            f"Curiosity Score : {result['score']}\n"                         # 가중치 계산한 총합 점수
-            f"Decision : {decision}\n"                                       # 호기심 점수에 따른 로봇 행동 
+            f"Object : {candidate.object_name} (ID: {candidate.track_id})\n"
+            f"Visit Count : {memory.visit_count} | Is New : {memory.is_new}\n"
+            f"Confidence : {candidate.confidence}\n"
+            f"------------------------------\n"
+            f"Novelty Score    : {result['novelty']}\n"
+            f"Visit Score      : {result['visit']}\n"
+            f"Change Score     : {result['change']}\n"
+            f"Uncertainty Score: {result['uncertainty']}\n"
+            f"------------------------------\n"
+            f"Total Curiosity Score : {result['score']}\n"
+            f"Decision : {decision}\n"
             f"=============================="
         )
         self.get_logger().info(log_msg)
