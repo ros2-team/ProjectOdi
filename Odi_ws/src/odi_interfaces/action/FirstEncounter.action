@@ -1,0 +1,9 @@
+
+odi_interfaces/DetectedObject target
+---
+odi_interfaces/EncounterResult result
+---
+string stage
+float32 progress
+string message
+

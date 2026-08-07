@@ -16,15 +16,18 @@ find_package(action_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MissionState.msg"
   "msg/BehaviorState.msg"
-  "msg/ObjectCandidate.msg"
-  "msg/ObjectCandidateArray.msg"
+  "msg/DetectedObject.msg"
+  "msg/DetectedObjectArray.msg"
   "msg/CuriosityDecision.msg"
+  "msg/SemanticLabel.msg"
+  "msg/EncounterResult.msg"
   "msg/ObservationResult.msg"
 
   "srv/EvaluateCuriosity.srv"
 
   "action/ObserveObject.action"
   "action/Explore.action"
+  "action/FirstEncounter.action"
 
   DEPENDENCIES
   std_msgs
