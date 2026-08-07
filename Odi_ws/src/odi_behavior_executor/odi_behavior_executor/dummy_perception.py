@@ -88,12 +88,12 @@ class MockFirstEncounterServer(Node):
 
         label = SemanticLabel()
         label.object_name = target.class_name
-        label.primary_color = "blue"
-        label.secondary_color = "white"
-        label.material = "unknown"
-        label.shape = "unknown"
-        label.condition = "normal"
-        label.special_features = [
+        label.object_primary_color = "blue"
+        label.object_secondary_color = "white"
+        label.object_material = "unknown"
+        label.object_shape = "unknown"
+        label.object_condition = "normal"
+        label.object_special_features = [
             "mock generated label",
         ]
         label.raw_json = "{}"
