@@ -100,11 +100,6 @@ class BehaviorExecutorNode(Node):
         if previous_state == msg.state:
             return
 
-        self.get_logger().info(
-            "::Mission state updated::\n"
-            f"{previous_state} -> {msg.state}"
-        )
-
         if msg.state == "IDLE":
             self.blackboard.reset()
 
@@ -185,7 +180,7 @@ class BehaviorExecutorNode(Node):
 
         self.get_logger().info(
             "::Next object selected::\n"
-            f"id = {current_object.detection_id}"
+            f"id = {current_object.detection_id}\n"
             f"class = {current_object.class_name}"
         )
 
@@ -300,6 +295,7 @@ class BehaviorExecutorNode(Node):
                 BehaviorStatus.RUNNING,
                 "First encounter is in progress",
             )
+            return
 
         if stage == ObjectProcessStage.ENCOUNTER_COMPLETED:
             self.set_behavior(

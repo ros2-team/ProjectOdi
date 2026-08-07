@@ -25,7 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             "behavior_executor = odi_behavior_executor.behavior_executor_node:main",
-            "dummy_preception = od_behavior_executor.dummy_preception:main",
+            "dummy_preception = odi_behavior_executor.dummy_perception:main",
         ],
     },
 )
