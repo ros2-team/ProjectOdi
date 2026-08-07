@@ -3,13 +3,13 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
-from std_msgs.msg import String
+from odi_interfaces.msg import SemanticLabel
 from cv_bridge import CvBridge
-import cv2
-from google import genai
 from google.genai import types
-import os
+from google import genai
 from datetime import datetime
+import cv2
+import os
 import json
 
 class GeminiVisionNode(Node):
@@ -23,7 +23,7 @@ class GeminiVisionNode(Node):
         self.subscription = self.create_subscription(CompressedImage, '/vla/trigger_image/compressed', self.image_callback, 10)
 
         # 메세지 타입 퍼블리쉬
-        self.scene_publisher = self.create_publisher(String, 'scene_data_topic', 10)
+        self.scene_publisher = self.create_publisher(SemanticLabel, '/perception/scene_data', 10)
 
         self.bridge = CvBridge()
         
@@ -157,7 +157,7 @@ class GeminiVisionNode(Node):
         
 
     def save_dataset(self, frame, response):
-        
+
         # 파일 이름 생성
         file_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
@@ -173,16 +173,30 @@ class GeminiVisionNode(Node):
         # Gemini 응답(JSON 문자열)을 dict로 변환
         scene_data = json.loads(response)
 
+        msg = SemanticLabel()
+        msg.object_name = scene_data.get("object_name", "")
+        msg.object_primary_color = scene_data.get("primary_color", "")
+        msg.object_secondary_color = scene_data.get("secondary_color", "")
+        msg.object_material = scene_data.get("material", "")
+        msg.object_shape = scene_data.get("shape", "")
+        msg.object_condition = scene_data.get("condition", "")
+
         # 추가 정보 저장
         scene_data["image"] = image_name
         scene_data["timestamp"] = file_id
-        scene_data["prompt"] = self.first_prompt
+        scene_data["prompt"] = "first_prompt"
 
         # JSON 저장
         with open(scene_path, "w", encoding="utf-8") as f:
             json.dump(scene_data, f, ensure_ascii=False, indent=4)
 
         self.get_logger().info(f"Dataset Saved : {image_name}")
+
+        self.publish(msg)
+
+    def publish(self, msg):
+        self.scene_publisher.publish(msg)
+        self.get_logger().info("성공적으로 보냈다 ^^")
 
 def main():
     rclpy.init()

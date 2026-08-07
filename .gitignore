@@ -256,7 +256,7 @@ Odi_ws/src/turtlebot3/
 Odi_ws/src/turtlebot3_msgs/
 
 Odi_ws/src/perception/dataset/
-
+Odi_ws/src/m-explore-ros2
 # End of https://www.toptal.com/developers/gitignore/api/ros2,visualstudiocode,python
 
 # IDE 설정 파일 무시
