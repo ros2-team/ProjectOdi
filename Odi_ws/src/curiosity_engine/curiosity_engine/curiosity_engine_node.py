@@ -1,96 +1,320 @@
+#!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
+# ============================================================
+# ROS2 Interface
+# ============================================================
 
-# core 패키지 가져옴 
-from curiosity_engine.core import ObjectCandidate, MemoryInfo, CuriosityCalculator, CuriosityPolicy
+from odi_interfaces.msg import SemanticLabel
 
+# ============================================================
+# Curiosity Engine 내부 모듈
+# ============================================================
+from curiosity_engine.core import (
+    ObjectCandidate,
+    MemoryInfo,
+    CuriosityCalculator,
+    CuriosityPolicy
+)
 
 class CuriosityEngineNode(Node):
+
     def __init__(self):
         super().__init__('curiosity_engine_node')
 
-        # 더미 메모리 DB (초기 상태)
-        self.dummy_memory_db = {}
+        # ========================================================
+        # 1. 임시 Memory DB
+        # ========================================================
+        # 현재는 실제 DB / world_memory_node가 아직 없기 때문에
+        # 테스트를 위해 Curiosity Engine 내부에서 임시 DB를 사용한다.
+ 
+        self.memory_db = {}
 
-        # 로직 클래스 인스턴스화
-        self.calculator = CuriosityCalculator()  # 점수 계산기
-        self.policy = CuriosityPolicy()          # 행동 결정기
+        # 점수 계산 담당
+        self.calculator = CuriosityCalculator()
 
-        # 2초 주기로 타이머 콜백 실행
-        self.timer = self.create_timer(2.0, self.timer_callback)
-        self.get_logger().info("Curiosity Engine Node Started")
+        # 점수 → 행동 결정 담당
+        self.policy = CuriosityPolicy()
 
-    def timer_callback(self):
-        # 비전 AI 노드에서 수신되었다고 가정하는 더미 입력 데이터
-        dummy_objects = [
-            # 예시: ID 1번 물체 (상태가 DIRTY로 새로 감지된 bottle)
-            ObjectCandidate(
-                track_id=1, confidence=0.55, object_name="bottle",
-                primary_color="blue", secondary_color="white", material="plastic",
-                shape="cylinder", condition="DIRTY"
-            )
-        ]
-
-        for candidate in dummy_objects:
-            # DB에 ID가 전혀 없으면 최초 발견된 물체(is_new=True)로 DB 인스턴스 생성
-            if candidate.track_id not in self.dummy_memory_db:
-                self.dummy_memory_db[candidate.track_id] = MemoryInfo(is_new=True)
-
-            memory = self.dummy_memory_db[candidate.track_id]
-
-            # 1. 과거 DB(memory)와 현재 실시간 데이터(candidate) 비교 점수 계산
-            calc_result = self.calculator.calculate_score(candidate, memory)
-            
-            # 2. 산출된 점수로 행동 결정
-            decision = self.policy.decide_action(calc_result["score"])
-
-            # 3. 콘솔 로그 출력
-            self.print_log(candidate, memory, calc_result, decision)
-
-            # 4. IGNORE가 아닌 유의미한 관찰 행동을 수행한 경우 DB 최신화
-            if decision != "IGNORE":
-                memory.visit_count += 1    # 방문 횟수 증가 -> 다음번 Visit Score 감소
-                memory.is_new = False      # 최초 발견 확인 완료 처리 -> 다음번 Novelty 점수 제거(0점)
-                
-                # [중요] 변한 속성을 확인 완료했으므로 DB 상태를 현재 상태로 동기화 (Change Reset)
-                memory.primary_color = candidate.primary_color
-                memory.secondary_color = candidate.secondary_color
-                memory.material = candidate.material
-                memory.shape = candidate.shape
-                memory.condition = candidate.condition
-
-    def print_log(self, candidate, memory, result, decision):
-        """디버깅을 위한 출력 로그 포맷"""
-        log_msg = (
-            f"\n==============================\n"
-            f"Object : {candidate.object_name} (ID: {candidate.track_id})\n"
-            f"Visit Count : {memory.visit_count} | Is New : {memory.is_new}\n"
-            f"Confidence : {candidate.confidence}\n"
-            f"------------------------------\n"
-            f"Novelty Score    : {result['novelty']}\n"
-            f"Visit Score      : {result['visit']}\n"
-            f"Change Score     : {result['change']}\n"
-            f"Uncertainty Score: {result['uncertainty']}\n"
-            f"------------------------------\n"
-            f"Total Curiosity Score : {result['score']}\n"
-            f"Decision : {decision}\n"
-            f"=============================="
+        self.sub_perception = self.create_subscription(
+            SemanticLabel,
+            '/perception/scene_data',
+            self.perception_callback,
+            10
         )
-        self.get_logger().info(log_msg)
+
+        # from odi_interfaces.msg import CuriosityDecision
+        #
+        # self.pub_decision = self.create_publisher(
+        #     CuriosityDecision,
+        #     '/curiosity/decision',
+        #     10
+        # )
+
+        self.get_logger().info('==========================================')
+        self.get_logger().info('Curiosity Engine Node initialized')
+        self.get_logger().info('Waiting for perception data...' )
+        self.get_logger().info('==========================================')
+
+    # ============================================================
+    # Perception Callback
+    # ============================================================
+    def perception_callback(self, msg: SemanticLabel):
+        self.get_logger().info('------------------------------------------')
+        self.get_logger().info('[PERCEPTION] SemanticLabel received')
+
+        # ========================================================
+        # Step 1. 인지 데이터 확인
+        # ========================================================
+        self.get_logger().info(f'Object Name     : {msg.object_name}')
+        self.get_logger().info(f'Primary Color   : {msg.object_primary_color}')
+        self.get_logger().info(f'Secondary Color : {msg.object_secondary_color}' )
+        self.get_logger().info(f'Material        : {msg.object_material}')
+        self.get_logger().info(f'Shape           : {msg.object_shape}')
+        self.get_logger().info(f'Condition       : {msg.object_condition}')
+
+        # ========================================================
+        # Step 2. ObjectCandidate 생성
+        # ========================================================
+        #
+        # 🔴 수정된 부분
+        #
+        # 기존에는:
+        #
+        # track_id
+        # confidence
+        #
+        # 를 사용했지만 SemanticLabel.msg에 존재하지 않는다.
+        #
+        # 따라서 현재는 실제 존재하는 데이터만 사용한다.
+        #
+
+        candidate = ObjectCandidate(
+            object_name=msg.object_name,
+            primary_color=msg.object_primary_color,
+            secondary_color=msg.object_secondary_color,
+            material=msg.object_material,
+            shape=msg.object_shape,
+            condition=msg.object_condition)
+        # ========================================================
+        # Step 3. 임시 Memory DB 조회
+        # ========================================================
+        #
+        # 🔴 수정된 부분
+        #
+        # 예전:
+        #
+        # memory_db[track_id]
+        #
+        # 현재:
+        #
+        # object 특징을 조합한 임시 Key 사용
+        #
+        # 실제 World Memory Node가 완성되면
+        # 이 부분은 World Memory에 조회 요청하는 구조로 변경한다.
+        #
+
+        memory_key = self.make_memory_key(candidate)
+
+        # --------------------------------------------------------
+        # 처음 본 객체
+        # --------------------------------------------------------
+
+        if memory_key not in self.memory_db:
+
+            self.memory_db[memory_key] = MemoryInfo(
+                visit_count=0,
+                is_new=True
+            )
+
+            self.get_logger().info(
+                f'[MEMORY] New object detected'
+            )
+
+        # --------------------------------------------------------
+        # 기존에 본 객체
+        # --------------------------------------------------------
+
+        else:
+
+            self.get_logger().info(
+                f'[MEMORY] Existing object found'
+            )
+
+        memory = self.memory_db[memory_key]
+
+        # ========================================================
+        # Step 4. Curiosity Score 계산
+        # ========================================================
+
+        calc_result = self.calculator.calculate_score(
+            candidate,
+            memory
+        )
+
+        # ========================================================
+        # Step 5. 행동 결정
+        # ========================================================
+        #
+        # 실제 기준값은 policy.py에서 관리한다.
+        #
+
+        decision = self.policy.decide_action(calc_result['score'])
+
+        # ========================================================
+        # Step 6. Memory 업데이트
+        # ========================================================
+        #
+        # 현재는 테스트용 DB이므로
+        # 여기서 방문 횟수와 객체 정보를 업데이트한다.
+        #
+        # ⚠️ 실제 DB가 연결되면
+        # 이 역할은 world_memory_node가 담당한다.
+        #
+
+        self.update_memory(memory, candidate)
+
+        # ========================================================
+        # Step 7. 결과 로그
+        # ========================================================
+
+        self.get_logger().info('==========================================')
+        self.get_logger().info('[CURIOSITY RESULT]')
+        self.get_logger().info(f'Object       : {candidate.object_name}')
+        self.get_logger().info(f'Memory Key   : {memory_key}')
+        self.get_logger().info(f'Visit Count  : {memory.visit_count}')
+
+        # calculator.py에서 계산한 값
+        if 'novelty' in calc_result:
+            self.get_logger().info(f'Novelty      : {calc_result["novelty"]}')
+
+        if 'uncertainty' in calc_result:
+            self.get_logger().info(f'Uncertainty  : {calc_result["uncertainty"]}')
+
+        if 'change' in calc_result:
+            self.get_logger().info(f'Change       : {calc_result["change"]}')
+
+        self.get_logger().info(f'Curiosity    : {calc_result["score"]}')
+        self.get_logger().info(f'Decision     : {decision}')
+        self.get_logger().info('==========================================')
+
+    # ============================================================
+    # Memory Key 생성
+    # ============================================================
+
+    def make_memory_key(
+        self,
+        candidate: ObjectCandidate
+    ) -> str:
+
+        """
+        현재 프로토타입에서 사용하는 임시 Memory Key.
+
+        track_id가 없기 때문에 객체의 의미적 특징을
+        조합해서 동일한 객체를 임시로 찾는다.
+
+        실제 World Memory가 구현되면
+        이 함수는 제거될 예정이다.
+        """
+
+        return (
+            f'{candidate.object_name}|'
+            f'{candidate.primary_color}|'
+            f'{candidate.secondary_color}|'
+            f'{candidate.material}|'
+            f'{candidate.shape}'
+        )
+
+    # ============================================================
+    # Memory 업데이트
+    # ============================================================
+
+    def update_memory(
+        self,
+        memory: MemoryInfo,
+        candidate: ObjectCandidate
+    ):
+
+        """
+        현재는 테스트용 Memory 업데이트.
+
+        실제 DB가 연결되면 world_memory_node가
+        담당하게 된다.
+        """
+
+        # --------------------------------------------------------
+        # 방문 횟수 증가
+        # --------------------------------------------------------
+
+        memory.visit_count += 1
+
+        # --------------------------------------------------------
+        # 더 이상 신규 객체가 아님
+        # --------------------------------------------------------
+
+        memory.is_new = False
+
+        # --------------------------------------------------------
+        # 현재 객체 특징 저장
+        # --------------------------------------------------------
+
+        memory.primary_color = candidate.primary_color
+        memory.secondary_color = candidate.secondary_color
+        memory.material = candidate.material
+        memory.shape = candidate.shape
+        memory.condition = candidate.condition
+
+        self.get_logger().info(
+            f'[MEMORY UPDATE] '
+            f'visit_count={memory.visit_count}'
+        )
+
+    # ============================================================
+    # Curiosity Decision Publisher
+    # ============================================================
+
+    # 현재는 테스트 단계라 주석 처리.
+    #
+    # 나중에 Behavior Executive와 연결할 때 사용한다.
+    #
+    # def publish_decision(
+    #     self,
+    #     score: float,
+    #     decision: str
+    # ):
+    #
+    #     dec_msg = CuriosityDecision()
+    #
+    #     dec_msg.score = score
+    #     dec_msg.decision = decision
+    #
+    #     self.pub_decision.publish(dec_msg)
+
+
+# ================================================================
+# Main
+# ================================================================
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = CuriosityEngineNode()
+
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
+
     finally:
         node.destroy_node()
-        rclpy.shutdown()
 
+        if rclpy.ok():
+            rclpy.shutdown()
+
+# ===============================================================
+# Python Entry Point
+# ================================================================
 
 if __name__ == '__main__':
-    main()
 
+    main()
