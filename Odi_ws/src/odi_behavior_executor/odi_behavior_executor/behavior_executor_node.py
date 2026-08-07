@@ -95,7 +95,7 @@ class BehaviorExecutorNode(Node):
         )
 
         if msg.state == "IDLE":
-            self.blackboard.reset_runtime_state()
+            self.blackboard.reset()
 
     def detected_objects_callback(
             self,
@@ -343,7 +343,7 @@ class BehaviorExecutorNode(Node):
                 "Curiosity stage completed but decision is missing"
             )
             self.blackboard.current_stage = (
-                ObjectProcessStage.FAILE
+                ObjectProcessStage.FAILED
             )
             return
 
