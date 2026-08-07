@@ -3,10 +3,13 @@ from enum import Enum
 
 import rclpy
 from rclpy.node import Node
+from rclpy.action import ActionClient
 
 from odi_interfaces.msg import BehaviorState
 from odi_interfaces.msg import MissionState
 from odi_interfaces.msg import DetectedObjectArray
+from odi_interfaces.action import FirstEncounter
+
 
 from odi_behavior_executor.blackboard import(
     ObjectProcessStage,
@@ -36,6 +39,14 @@ class BehaviorExecutorNode(Node):
         super().__init__("behavior_executor_node")
 
         self.blackboard = OdiBlackboard()
+
+        self.first_encounter_action_client = ActionClient(
+            self,
+            FirstEncounter,
+            "/first_encounter",
+        )
+        self.first_encounter_goal_active = False
+        self.first_encounter_goal_handle = None
 
         self.current_behavior = BehaviorName.NONE
         self.current_status = BehaviorStatus.IDLE
@@ -280,11 +291,7 @@ class BehaviorExecutorNode(Node):
     def select_object_behavior(self) -> None:
         stage = self.blackboard.current_stage
         if stage == ObjectProcessStage.DETECTED:
-            self.set_behavior(
-                BehaviorName.FIRST_ENCOUNTER,
-                BehaviorStatus.RUNNING,
-                "Starting first encounter with detected object",
-            )
+            self.start_first_encounter()
             return
 
         if stage == ObjectProcessStage.ENCOUNTERING:
@@ -346,6 +353,151 @@ class BehaviorExecutorNode(Node):
             BehaviorName.NONE,
             BehaviorStatus.IDLE,
             "No object behavior selected",
+        )
+
+    def start_first_encounter(self) -> None:
+        # encounter 액션 실행 함수
+        if self.first_encounter_goal_active:
+            return
+
+        current_object = self.blackboard.current_object
+
+        if current_object is None:
+            self.get_logger().warning(
+                "Can not start first_encounter : current object is missing"
+            )
+            self.blackboard.current_stage = (
+                ObjectProcessStage.FAILED
+            )
+            return
+
+        if not self.first_encounter_action_client.server_is_ready():
+            self.get_logger().warning(
+                "First Encounter action server is not ready"
+            )
+            self.set_behavior(
+                BehaviorName.FIRST_ENCOUNTER,
+                BehaviorStatus.IDLE,
+                "Waiting for First Encounter action server",
+            )
+            return
+
+        goal_msg = FirstEncounter.Goal()
+        goal_msg.target = current_object
+
+        self.first_encounter_goal_active = True
+        self.blackboard.current_stage = (
+            ObjectProcessStage.ENCOUNTERING
+        )
+        self.set_behavior(
+            BehaviorName.FIRST_ENCOUNTER,
+            BehaviorStatus.RUNNING,
+            "First encounter goal requested",
+        )
+        self.get_logger().info(
+            "::First encounter goal requested::\n"
+            f"id = {current_object.detection_id}\n"
+            f"class = {current_object.class_name}"
+        )
+        send_goal_future = (
+            self.first_encounter_action_client.send_goal_async(
+                goal_msg,
+                feedback_callback=(
+                    self.first_encounter_feedback_callback
+                ),
+            )
+        )
+        send_goal_future.add_done_callback(
+            self.first_encounter_goal_response_callback
+        )
+
+    def first_encounter_goal_response_callback(self, future,) -> None:
+        try:
+            goal_handle = future.result()
+        except Exception as error:
+            self.get_logger().error(
+                f"Failed to send First Encounter goal : {error}"
+            )
+            self.first_encounter_goal_active = False
+            self.blackboard.current_stage = (
+                ObjectProcessStage.FAILED
+            )
+            return
+
+        if not goal_handle.accepted:
+            self.get_logger().warning(
+                "First Encounter goal was rejected"
+            )
+            self.first_encounter_goal_active = False
+            self.blackboard.current_stage = (
+                ObjectProcessStage.FAILED
+            )
+            return
+
+        self.first_encounter_goal_handle = goal_handle
+        self.get_logger().info(
+            "First Encounter goal was accepted"
+        )
+        result_future = goal_handle.get_result_async()
+        result_future.add_done_callback(
+            self.first_encounter_result_callback
+        )
+
+    def first_encounter_feedback_callback(
+            self,
+            feedback_msg,
+    ) -> None:
+        # First Encounter의 중간 진행 상황을 처리한다.
+        feedback = feedback_msg.feedback
+        self.current_datail = (
+            f"{feedback.stage} : {feedback.message} ({feedback.progress * 100.0:.0f}%)"
+        )
+        self.get_logger().info(
+            "::First encounter feedback::\n"
+            f"stage = {feedback.stage}\n"
+            f"progress = {feedback.progress: .2f}\n"
+            f"message = {feedback.message}"
+        )
+
+    def first_encounter_result_callback(
+            self,
+            future,
+    ) -> None:
+        # First Encounter의 최종 결과를  처리한다.
+        self.first_encounter_goal_active = False
+        self.first_encounter_goal_handle = None
+        try:
+            wrapped_result = future.result()
+            encounter_result = wrapped_result.result.result
+        except Exception as error:
+            self.get_logger().error(
+                f"Failed to receive first encounter result : {error}"
+            )
+            self.blackboard.current_stage = (
+                ObjectProcessStage.FAILED
+            )
+            return
+        self.blackboard.encounter_result = encounter_result
+
+        if not encounter_result.success:
+            self.get_logger().warning(
+                "::First encounter failed::\n"
+                f"detection_id = {encounter_result.detection_id}\n"
+                f"reason = {encounter_result.failure_reason}"
+            )
+            self.blackboard.current_stage = (
+                ObjectProcessStage.FAILED
+            )
+            return
+
+        self.get_logger().info(
+            "::First encounter completed::\n"
+            f"detection_id = {encounter_result.detection_id}\n"
+            f"image_path = {encounter_result.image_path}\n"
+            f"object_name = {encounter_result.label.object_name}"
+        )
+        self.blackboard.current_stage = (
+            ObjectProcessStage.ENCOUNTER_COMPLETED
         )
 
     def handle_curiosity_decision(self) -> None:
