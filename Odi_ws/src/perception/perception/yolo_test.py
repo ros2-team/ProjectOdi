@@ -42,7 +42,10 @@ class YoloTestNode(Node):
         frame = self.bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
 
         # YOLO 추론 (imgsz=320 강제 축소로 CPU 방어)
-        results = self.model(frame, classes=[0], conf=0.5, verbose=False, device='cpu', imgsz=320)
+        # results = self.model(frame, classes=[0], conf=0.5, verbose=False, device='cpu', imgsz=320)
+
+        # YOLO 추론
+        results = self.model(frame, conf=0.5, verbose=False, device='cpu')
         
         # 💡 객체 인식 여부 확인 (사람(class 0)이 1명이라도 있는지)
         object_detected = len(results[0].boxes) > 0
