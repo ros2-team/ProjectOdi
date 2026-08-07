@@ -134,7 +134,7 @@ class BehaviorExecutorNode(Node):
 
         for detected_object in valid_objects:
             self.get_logger().info(
-                "::Queued detected object::"
+                "::Queued detected object::\n"
                 f"id = {detected_object.detection_id}\n"
                 f"class = {detected_object.class_name}\n"
                 f"confidence = {detected_object.confidence:.2f}"
@@ -142,9 +142,22 @@ class BehaviorExecutorNode(Node):
         self.select_next_object()
 
     def select_next_object(self) -> bool:
+        self.get_logger().info(
+            "::select_next_object called::\n"
+            f"current_object={self.blackboard.current_object}\n"
+            f"pending_count={len(self.blackboard.pending_objects)}"
+        )
         if self.blackboard.current_object is not None:
+            self.get_logger().warning(
+                "Can not select next object :"
+                "current_object already exists"
+            )
             return False
-        if self.blackboard.pending_objects:
+        if not self.blackboard.pending_objects:
+            self.get_logger().warning(
+                "Can not select next object : "
+                "pending_objects is empty"
+            )
             return False
 
         self.blackboard.current_object = (
@@ -393,7 +406,7 @@ class BehaviorExecutorNode(Node):
         self.current_detail = detail
 
         self.get_logger().info(
-            "::Behavior changed::"
+            "::Behavior changed::\n"
             f"{previous_behavior.value} -> {behavior.value}"
         )
         self.publish_current_behavior()
