@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-# ============================================================
-# ROS2 Interface
-# ============================================================
+import mysql.connector
+from mysql.connector import Error
 
 from odi_interfaces.msg import SemanticLabel
 
@@ -28,11 +27,53 @@ class CuriosityEngineNode(Node):
         # 현재는 실제 DB / world_memory_node가 아직 없기 때문에
         # 테스트를 위해 Curiosity Engine 내부에서 임시 DB를 사용한다.
  
-        self.memory_db = {}
+        # ========================================================
+        # MySQL DB 연결
+        # ========================================================
+        try:
+            self.conn = mysql.connector.connect(
+                host='192.168.0.20',
+                port=3306,
+                user='yyj',
+                password='1234',
+                database='Odi_DB'
+            )
+
+            self.cursor = self.conn.cursor(dictionary=True)
+
+            if self.conn.is_connected():
+                self.get_logger().info('==========================================')
+                self.get_logger().info('MySQL DB connected successfully')
+                self.get_logger().info('Database: Odi_DB')
+                self.get_logger().info('==========================================')
+
+        except Error as e:
+            self.get_logger().error(
+                f'MySQL connection failed: {e}'
+            )
+
+            self.conn = None
+            self.cursor = None
+
+        if self.cursor is not None:
+
+            try:
+                self.cursor.execute("SHOW TABLES")
+
+                tables = self.cursor.fetchall()
+
+                for table in tables:
+                    self.get_logger().info(
+                        f'[DB TABLE] {table}'
+                    )
+
+            except Error as e:
+                self.get_logger().error(
+                    f'Table query failed: {e}'
+                )
 
         # 점수 계산 담당
         self.calculator = CuriosityCalculator()
-
         # 점수 → 행동 결정 담당
         self.policy = CuriosityPolicy()
 
