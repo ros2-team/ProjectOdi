@@ -42,10 +42,7 @@ class CuriosityEngineNode(Node):
             self.cursor = self.conn.cursor(dictionary=True)
 
             if self.conn.is_connected():
-                self.get_logger().info('==========================================')
-                self.get_logger().info('MySQL DB connected successfully')
-                self.get_logger().info('Database: Odi_DB')
-                self.get_logger().info('==========================================')
+                self.get_logger().info('MySQL DB 연결 성공!!!!!!!!!!!!!!!!!!!')
 
         except Error as e:
             self.get_logger().error(
