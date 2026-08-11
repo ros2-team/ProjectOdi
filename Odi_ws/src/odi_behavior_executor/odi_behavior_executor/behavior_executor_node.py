@@ -8,6 +8,9 @@ from rclpy.action import ActionClient
 from odi_interfaces.msg import BehaviorState
 from odi_interfaces.msg import MissionState
 from odi_interfaces.msg import DetectedObjectArray
+
+from odi_interfaces.srv import EvaluateCuriosity
+
 from odi_interfaces.action import FirstEncounter
 
 
@@ -48,6 +51,12 @@ class BehaviorExecutorNode(Node):
         self.first_encounter_goal_active = False
         self.first_encounter_goal_handle = None
 
+        self.curiosity_client = self.create_client(
+            EvaluateCuriosity,
+            "/evaluate_curiosity",
+        )
+        self.curiosity_request_active = False
+
         self.current_behavior = BehaviorName.NONE
         self.current_status = BehaviorStatus.IDLE
         self.current_detail = "Waiting for misstion"
@@ -67,6 +76,7 @@ class BehaviorExecutorNode(Node):
             self.detected_objects_callback,
             10,
         )
+
         #현재 행동 상태 발행
         self.behavoir_state_publisher = self.create_publisher(
             BehaviorState,
@@ -235,7 +245,7 @@ class BehaviorExecutorNode(Node):
             return
         # 우선순위 3 : 현재 처리 중인 물체
         if self.blackboard.current_object is not None:
-            self.select_object_behavior()
+            self.object_behavior_selector()
             return
         #대기중인 물체가 있는데 현재 물체가 없다면 다음 물체 선택
         if self.blackboard.pending_objects:
@@ -283,34 +293,33 @@ class BehaviorExecutorNode(Node):
             BehaviorStatus.IDLE,
             "Waiting for mission",
             )
-    def select_object_behavior(self) -> None:
+
+    def object_behavior_selector(self) -> None:
         stage = self.blackboard.current_stage
         if stage == ObjectProcessStage.DETECTED:
+            self.set_behavior(
+                BehaviorName.FIRST_ENCOUNTER,
+                BehaviorStatus.RUNNING,
+                "First encounter start!"
+            )
             self.start_first_encounter()
             return
 
         if stage == ObjectProcessStage.ENCOUNTERING:
-            self.set_behavior(
-                BehaviorName.FIRST_ENCOUNTER,
-                BehaviorStatus.RUNNING,
-                "First encounter is in progress",
-            )
+
             return
 
         if stage == ObjectProcessStage.ENCOUNTER_COMPLETED:
             self.set_behavior(
                 BehaviorName.EVALUATE_CURIOSITY,
                 BehaviorStatus.RUNNING,
-                "Evaluating curiosity from encounter result",
+                "Evaluate curiosity start!"
             )
+            self.start_curiosity_evaluation()
             return
 
         if stage == ObjectProcessStage.EVALUATING_CURIOSITY:
-            self.set_behavior(
-                BehaviorName.EVALUATE_CURIOSITY,
-                BehaviorStatus.RUNNING,
-                "Curiosity evaluation is in progress",
-            )
+
             return
 
         if stage == ObjectProcessStage.CURIOSITY_EVALUATED:
@@ -371,11 +380,6 @@ class BehaviorExecutorNode(Node):
             self.get_logger().warning(
                 "First Encounter action server is not ready"
             )
-            self.set_behavior(
-                BehaviorName.FIRST_ENCOUNTER,
-                BehaviorStatus.IDLE,
-                "Waiting for First Encounter action server",
-            )
             return
 
         goal_msg = FirstEncounter.Goal()
@@ -384,11 +388,6 @@ class BehaviorExecutorNode(Node):
         self.first_encounter_goal_active = True
         self.blackboard.current_stage = (
             ObjectProcessStage.ENCOUNTERING
-        )
-        self.set_behavior(
-            BehaviorName.FIRST_ENCOUNTER,
-            BehaviorStatus.RUNNING,
-            "First encounter goal requested",
         )
         self.get_logger().info(
             "::First encounter goal requested::\n"
@@ -445,7 +444,7 @@ class BehaviorExecutorNode(Node):
     ) -> None:
         # First Encounter의 중간 진행 상황을 처리한다.
         feedback = feedback_msg.feedback
-        self.current_datail = (
+        self.current_detail = (
             f"{feedback.stage} : {feedback.message} ({feedback.progress * 100.0:.0f}%)"
         )
         self.get_logger().info(
@@ -495,6 +494,81 @@ class BehaviorExecutorNode(Node):
         self.blackboard.current_stage = (
             ObjectProcessStage.ENCOUNTER_COMPLETED
         )
+    def start_curiosity_evaluation(self) -> None:
+        if self.curiosity_request_active:
+            return
+
+        encounter_result = self.blackboard.encounter_result
+
+        if encounter_result is None:
+            self.get_logger().warning(
+                "Cannot evaluate curiosity : encounter_result is missing"
+            )
+            self.blackboard.current_stage = (
+                ObjectProcessStage.FAILED
+            )
+            return
+
+        if not self.curiosity_client.service_is_ready():
+            self.get_logger().warning(
+                "Evaluate curiosity services is not ready"
+            )
+            return
+
+        request = EvaluateCuriosity.Request()
+        request.encounter = encounter_result
+        self.curiosity_request_active = True
+
+        self.blackboard.current_stage = (
+            ObjectProcessStage.EVALUATING_CURIOSITY
+        )
+
+        self.get_logger().info(
+            "::Curiosity evaluation requested::\n"
+            f"detection_id = {encounter_result.detection_id}"
+        )
+
+        future = self.curiosity_client.call_async(request)
+        future.add_done_callback(
+            self.curiosity_response_callback
+        )
+
+    def curiosity_response_callback(self, future) -> None:
+        self.curiosity_request_active = False
+        try:
+            response = future.result()
+        except Exception as error:
+            self.get_logger().error(
+                f"Curiosity service call failed : {error}"
+            )
+            self.blackboard.current_stage = (
+                ObjectProcessStage.FAILED
+            )
+            return
+
+        if not response.success:
+            self.get_logger().warning(
+                "::Curiosity evaluation failed::\n"
+                f"message = {response.message}"
+            )
+            self.blackboard.current_stage = (
+                ObjectProcessStage.FAILED
+            )
+            return
+
+        self.blackboard.curiosity_decision = (
+            response.decision
+        )
+        self.blackboard.current_stage = (
+            ObjectProcessStage.CURIOSITY_EVALUATED
+        )
+        self.get_logger().info(
+            "Curiosity evaluation completed::\n"
+            f"action = {response.decision.action}\n"
+            f"curiosity_score = {response.decision.curiosity_score : .2f}\n"
+            f"similarity_score = {response.decision.similarity_score : .2f}\n"
+            f"reason = {response.decision.reason}"
+        )
 
     def handle_curiosity_decision(self) -> None:
         decision = self.blackboard.curiosity_decision
@@ -512,23 +586,14 @@ class BehaviorExecutorNode(Node):
             self.blackboard.current_stage = (
                 ObjectProcessStage.OBSERVING
             )
-            self.set_behavior(
-                BehaviorName.OBSERVE,
-                BehaviorStatus.RUNNING,
-                "Object selected for detailed observation",
-            )
             return
 
         if decision.action == "IGNORE":
             self.blackboard.current_stage = (
                 ObjectProcessStage.IGNORED
             )
-            self.set_behavior(
-                BehaviorName.NONE,
-                BehaviorStatus.SUCCESS,
-                "Object does not require detailed observation",
-            )
             return
+
         self.get_logger().warning(
             f"Unknown curiosity action : {decision.action}"
         )
@@ -547,16 +612,21 @@ class BehaviorExecutorNode(Node):
            and status == self.current_status
            and detail == self.current_detail):
             return
+
+        behavior_changed = (
+            behavior != self.current_behavior
+        )
         previous_behavior = self.current_behavior
 
         self.current_behavior = behavior
         self.current_status = status
         self.current_detail = detail
 
-        self.get_logger().info(
-            "::Behavior changed::\n"
-            f"{previous_behavior.value} -> {behavior.value}"
-        )
+        if behavior_changed:
+            self.get_logger().info(
+                "::Behavior changed::\n"
+                f"{previous_behavior.value} -> {behavior.value}"
+            )
         self.publish_current_behavior()
 
     def publish_current_behavior(self) -> None:

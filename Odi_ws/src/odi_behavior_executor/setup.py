@@ -26,6 +26,7 @@ setup(
         'console_scripts': [
             "behavior_executor = odi_behavior_executor.behavior_executor_node:main",
             "dummy_preception = odi_behavior_executor.dummy_perception:main",
+            "dummy_curiosity = odi_behavior_executor.dummy_curiosity:main",
         ],
     },
 )
