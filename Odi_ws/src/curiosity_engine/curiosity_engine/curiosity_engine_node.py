@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
+
 import rclpy
 from rclpy.node import Node
 import mysql.connector
 from mysql.connector import Error
 
+# ============================================================
+# ROS2 Interface
+# ============================================================
 from odi_interfaces.msg import SemanticLabel
 
 # ============================================================
@@ -16,20 +20,18 @@ from curiosity_engine.core import (
     CuriosityPolicy
 )
 
+
 class CuriosityEngineNode(Node):
 
     def __init__(self):
         super().__init__('curiosity_engine_node')
 
         # ========================================================
-        # 1. 임시 Memory DB
+        # 1. MySQL DB 연결
         # ========================================================
-        # 현재는 실제 DB / world_memory_node가 아직 없기 때문에
-        # 테스트를 위해 Curiosity Engine 내부에서 임시 DB를 사용한다.
- 
-        # ========================================================
-        # MySQL DB 연결
-        # ========================================================
+        self.conn = None
+        self.cursor = None
+
         try:
             self.conn = mysql.connector.connect(
                 host='192.168.0.20',
@@ -38,42 +40,37 @@ class CuriosityEngineNode(Node):
                 password='1234',
                 database='Odi_DB'
             )
-
             self.cursor = self.conn.cursor(dictionary=True)
 
             if self.conn.is_connected():
-                self.get_logger().info('MySQL DB 연결 성공!!!!!!!!!!!!!!!!!!!')
+                self.get_logger().info('MySQL DB 연결 성공!!!!!!!!!!!!!!!!!!!!!')
 
         except Error as e:
-            self.get_logger().error(
-                f'MySQL connection failed: {e}'
-            )
-
+            self.get_logger().error(f'MySQL connection failed: {e}')
             self.conn = None
             self.cursor = None
 
+        # ========================================================
+        # 2. DB 테이블 확인
+        # ========================================================
         if self.cursor is not None:
-
             try:
                 self.cursor.execute("SHOW TABLES")
-
                 tables = self.cursor.fetchall()
-
                 for table in tables:
-                    self.get_logger().info(
-                        f'[DB TABLE] {table}'
-                    )
-
+                    self.get_logger().info(f'[DB TABLE] {table}')
             except Error as e:
-                self.get_logger().error(
-                    f'Table query failed: {e}'
-                )
+                self.get_logger().error(f'Table query failed: {e}')
 
-        # 점수 계산 담당
+        # ========================================================
+        # 3. Curiosity 계산 모듈
+        # ========================================================
         self.calculator = CuriosityCalculator()
-        # 점수 → 행동 결정 담당
         self.policy = CuriosityPolicy()
 
+        # ========================================================
+        # 4. Perception 데이터 구독
+        # ========================================================
         self.sub_perception = self.create_subscription(
             SemanticLabel,
             '/perception/scene_data',
@@ -81,17 +78,9 @@ class CuriosityEngineNode(Node):
             10
         )
 
-        # from odi_interfaces.msg import CuriosityDecision
-        #
-        # self.pub_decision = self.create_publisher(
-        #     CuriosityDecision,
-        #     '/curiosity/decision',
-        #     10
-        # )
-
         self.get_logger().info('==========================================')
         self.get_logger().info('Curiosity Engine Node initialized')
-        self.get_logger().info('Waiting for perception data...' )
+        self.get_logger().info('Waiting for perception data...')
         self.get_logger().info('==========================================')
 
     # ============================================================
@@ -101,134 +90,47 @@ class CuriosityEngineNode(Node):
         self.get_logger().info('------------------------------------------')
         self.get_logger().info('[PERCEPTION] SemanticLabel received')
 
-        # ========================================================
-        # Step 1. 인지 데이터 확인
-        # ========================================================
+        # 인지 데이터 출력
         self.get_logger().info(f'Object Name     : {msg.object_name}')
         self.get_logger().info(f'Primary Color   : {msg.object_primary_color}')
-        self.get_logger().info(f'Secondary Color : {msg.object_secondary_color}' )
+        self.get_logger().info(f'Secondary Color : {msg.object_secondary_color}')
         self.get_logger().info(f'Material        : {msg.object_material}')
         self.get_logger().info(f'Shape           : {msg.object_shape}')
         self.get_logger().info(f'Condition       : {msg.object_condition}')
 
-        # ========================================================
-        # Step 2. ObjectCandidate 생성
-        # ========================================================
-        #
-        # 🔴 수정된 부분
-        #
-        # 기존에는:
-        #
-        # track_id
-        # confidence
-        #
-        # 를 사용했지만 SemanticLabel.msg에 존재하지 않는다.
-        #
-        # 따라서 현재는 실제 존재하는 데이터만 사용한다.
-        #
-
+        # 계산용 ObjectCandidate 생성
         candidate = ObjectCandidate(
             object_name=msg.object_name,
             primary_color=msg.object_primary_color,
             secondary_color=msg.object_secondary_color,
             material=msg.object_material,
             shape=msg.object_shape,
-            condition=msg.object_condition)
-        # ========================================================
-        # Step 3. 임시 Memory DB 조회
-        # ========================================================
-        #
-        # 🔴 수정된 부분
-        #
-        # 예전:
-        #
-        # memory_db[track_id]
-        #
-        # 현재:
-        #
-        # object 특징을 조합한 임시 Key 사용
-        #
-        # 실제 World Memory Node가 완성되면
-        # 이 부분은 World Memory에 조회 요청하는 구조로 변경한다.
-        #
-
-        memory_key = self.make_memory_key(candidate)
-
-        # --------------------------------------------------------
-        # 처음 본 객체
-        # --------------------------------------------------------
-
-        if memory_key not in self.memory_db:
-
-            self.memory_db[memory_key] = MemoryInfo(
-                visit_count=0,
-                is_new=True
-            )
-
-            self.get_logger().info(
-                f'[MEMORY] New object detected'
-            )
-
-        # --------------------------------------------------------
-        # 기존에 본 객체
-        # --------------------------------------------------------
-
-        else:
-
-            self.get_logger().info(
-                f'[MEMORY] Existing object found'
-            )
-
-        memory = self.memory_db[memory_key]
-
-        # ========================================================
-        # Step 4. Curiosity Score 계산
-        # ========================================================
-
-        calc_result = self.calculator.calculate_score(
-            candidate,
-            memory
+            condition=msg.object_condition
         )
 
-        # ========================================================
-        # Step 5. 행동 결정
-        # ========================================================
-        #
-        # 실제 기준값은 policy.py에서 관리한다.
-        #
+        # World Memory DB 조회 (유사도 기반 비교)
+        memory = self.get_memory_from_db(candidate)
 
+        if memory is None:
+            self.get_logger().error('[MEMORY] Failed to retrieve memory from DB')
+            return
+
+        # 과거 정보 + 현재 정보로 호기심 계산
+        calc_result = self.calculator.calculate_score(candidate, memory)
+
+        # 행동 결정
         decision = self.policy.decide_action(calc_result['score'])
 
-        # ========================================================
-        # Step 6. Memory 업데이트
-        # ========================================================
-        #
-        # 현재는 테스트용 DB이므로
-        # 여기서 방문 횟수와 객체 정보를 업데이트한다.
-        #
-        # ⚠️ 실제 DB가 연결되면
-        # 이 역할은 world_memory_node가 담당한다.
-        #
-
-        self.update_memory(memory, candidate)
-
-        # ========================================================
-        # Step 7. 결과 로그
-        # ========================================================
-
+        # 결과 로그 출력
         self.get_logger().info('==========================================')
         self.get_logger().info('[CURIOSITY RESULT]')
         self.get_logger().info(f'Object       : {candidate.object_name}')
-        self.get_logger().info(f'Memory Key   : {memory_key}')
         self.get_logger().info(f'Visit Count  : {memory.visit_count}')
 
-        # calculator.py에서 계산한 값
         if 'novelty' in calc_result:
             self.get_logger().info(f'Novelty      : {calc_result["novelty"]}')
-
         if 'uncertainty' in calc_result:
             self.get_logger().info(f'Uncertainty  : {calc_result["uncertainty"]}')
-
         if 'change' in calc_result:
             self.get_logger().info(f'Change       : {calc_result["change"]}')
 
@@ -237,101 +139,123 @@ class CuriosityEngineNode(Node):
         self.get_logger().info('==========================================')
 
     # ============================================================
-    # Memory Key 생성
+    # World Memory DB 조회
     # ============================================================
+    def get_memory_from_db(self, candidate: ObjectCandidate):
+        if self.cursor is None:
+            self.get_logger().error('[DB] Cursor is not available')
+            return None
 
-    def make_memory_key(
-        self,
-        candidate: ObjectCandidate
-    ) -> str:
+        # 1. DB 후보 전체 조회
+        find_sql = "SELECT * FROM detected_objects"
 
-        """
-        현재 프로토타입에서 사용하는 임시 Memory Key.
+        try:
+            self.cursor.execute(find_sql)
+            rows = self.cursor.fetchall()
 
-        track_id가 없기 때문에 객체의 의미적 특징을
-        조합해서 동일한 객체를 임시로 찾는다.
+            # DB가 비어있는 경우
+            if not rows:
+                self.get_logger().info('[MEMORY] DB is empty. New object.')
+                return MemoryInfo(visit_count=0, is_new=True)
 
-        실제 World Memory가 구현되면
-        이 함수는 제거될 예정이다.
-        """
+            # 2. 후보 하나씩 비교하여 최고 유사도 탐색
+            best_similarity = 0.0
+            best_row = None
 
-        return (
-            f'{candidate.object_name}|'
-            f'{candidate.primary_color}|'
-            f'{candidate.secondary_color}|'
-            f'{candidate.material}|'
-            f'{candidate.shape}'
-        )
+            for row in rows:
+                # DB에 저장된 객체를 비교용 ObjectCandidate로 변환
+                db_candidate = ObjectCandidate(
+                    object_name=row['object_name'],
+                    primary_color=row['object_primary_color'],
+                    secondary_color=row['object_secondary_color'],
+                    material=row['object_material'],
+                    shape=row['object_shape'],
+                    condition=row['object_condition']
+                )
+
+                similarity = self.calculator.calculate_similarity(candidate, db_candidate)
+
+                self.get_logger().info(
+                    f'[MEMORY] {row["object_name"]} similarity={similarity:.2f}'
+                )
+
+                if similarity > best_similarity:
+                    best_similarity = similarity
+                    best_row = row
+
+            # 3. 임계값(Threshold) 판정
+            similarity_threshold = 0.80
+
+            if best_row is not None and best_similarity >= similarity_threshold:
+                self.get_logger().info('[MEMORY] Existing object found')
+                self.get_logger().info(f'[MEMORY] best_similarity={best_similarity:.2f}')
+                self.get_logger().info(f'[MEMORY] matched_object={best_row["object_name"]}')
+
+                # 방문 횟수 계산 (동일 속성 완전 일치 row 수 조회)
+                count_sql = """
+                    SELECT COUNT(*) AS visit_count
+                    FROM detected_objects
+                    WHERE object_name = %s
+                      AND object_primary_color = %s
+                      AND object_secondary_color = %s
+                      AND object_material = %s
+                      AND object_shape = %s
+                """
+                count_values = (
+                    best_row['object_name'],
+                    best_row['object_primary_color'],
+                    best_row['object_secondary_color'],
+                    best_row['object_material'],
+                    best_row['object_shape']
+                )
+
+                self.cursor.execute(count_sql, count_values)
+                count_row = self.cursor.fetchone()
+
+                visit_count = count_row['visit_count'] if count_row is not None else 1
+
+                self.get_logger().info(f'[MEMORY] visit_count={visit_count}')
+
+                memory = MemoryInfo(visit_count=visit_count, is_new=False)
+                memory.object_name = best_row['object_name']
+                memory.primary_color = best_row['object_primary_color']
+                memory.secondary_color = best_row['object_secondary_color']
+                memory.material = best_row['object_material']
+                memory.shape = best_row['object_shape']
+                memory.condition = best_row['object_condition']
+                memory.similarity = best_similarity
+
+                return memory
+
+            # Threshold 미만인 경우
+            self.get_logger().info('[MEMORY] New object found')
+            self.get_logger().info(f'[MEMORY] best_similarity={best_similarity:.2f}')
+
+            return MemoryInfo(visit_count=0, is_new=True)
+
+        except Error as e:
+            self.get_logger().error(f'[DB] Memory query failed: {e}')
+            return None
 
     # ============================================================
-    # Memory 업데이트
+    # Node 종료
     # ============================================================
+    def destroy_node(self):
+        if self.cursor is not None:
+            try:
+                self.cursor.close()
+            except Exception as e:
+                self.get_logger().error(f'[DB] Cursor close failed: {e}')
 
-    def update_memory(
-        self,
-        memory: MemoryInfo,
-        candidate: ObjectCandidate
-    ):
+        if self.conn is not None:
+            try:
+                if self.conn.is_connected():
+                    self.conn.close()
+                    self.get_logger().info('[DB] MySQL connection closed')
+            except Exception as e:
+                self.get_logger().error(f'[DB] Connection close failed: {e}')
 
-        """
-        현재는 테스트용 Memory 업데이트.
-
-        실제 DB가 연결되면 world_memory_node가
-        담당하게 된다.
-        """
-
-        # --------------------------------------------------------
-        # 방문 횟수 증가
-        # --------------------------------------------------------
-
-        memory.visit_count += 1
-
-        # --------------------------------------------------------
-        # 더 이상 신규 객체가 아님
-        # --------------------------------------------------------
-
-        memory.is_new = False
-
-        # --------------------------------------------------------
-        # 현재 객체 특징 저장
-        # --------------------------------------------------------
-
-        memory.primary_color = candidate.primary_color
-        memory.secondary_color = candidate.secondary_color
-        memory.material = candidate.material
-        memory.shape = candidate.shape
-        memory.condition = candidate.condition
-
-        self.get_logger().info(
-            f'[MEMORY UPDATE] '
-            f'visit_count={memory.visit_count}'
-        )
-
-    # ============================================================
-    # Curiosity Decision Publisher
-    # ============================================================
-
-    # 현재는 테스트 단계라 주석 처리.
-    #
-    # 나중에 Behavior Executive와 연결할 때 사용한다.
-    #
-    # def publish_decision(
-    #     self,
-    #     score: float,
-    #     decision: str
-    # ):
-    #
-    #     dec_msg = CuriosityDecision()
-    #
-    #     dec_msg.score = score
-    #     dec_msg.decision = decision
-    #
-    #     self.pub_decision.publish(dec_msg)
-
-
-# ================================================================
-# Main
-# ================================================================
+        super().destroy_node()
 
 
 def main(args=None):
@@ -342,17 +266,11 @@ def main(args=None):
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
-
     finally:
         node.destroy_node()
-
         if rclpy.ok():
             rclpy.shutdown()
 
-# ===============================================================
-# Python Entry Point
-# ================================================================
 
 if __name__ == '__main__':
-
     main()
