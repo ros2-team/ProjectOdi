@@ -12,6 +12,7 @@ from odi_interfaces.msg import DetectedObjectArray
 from odi_interfaces.srv import EvaluateCuriosity
 
 from odi_interfaces.action import FirstEncounter
+from odi_interfaces.action import ObserveObject
 
 
 from odi_behavior_executor.blackboard import(
@@ -43,6 +44,7 @@ class BehaviorExecutorNode(Node):
 
         self.blackboard = OdiBlackboard()
 
+        #인카운터 액션 클라이언트
         self.first_encounter_action_client = ActionClient(
             self,
             FirstEncounter,
@@ -51,15 +53,26 @@ class BehaviorExecutorNode(Node):
         self.first_encounter_goal_active = False
         self.first_encounter_goal_handle = None
 
+        #호기심 판단 서비스 서버
         self.curiosity_client = self.create_client(
             EvaluateCuriosity,
             "/evaluate_curiosity",
         )
         self.curiosity_request_active = False
 
+        #관찰 액션 클라이언트
+        self.observe_object_action_client = ActionClient(
+            self,
+            ObserveObject,
+            "/observe_object",
+        )
+        self.observe_object_action_active = False
+        self.observe_object_action_handle = None
+
+
         self.current_behavior = BehaviorName.NONE
         self.current_status = BehaviorStatus.IDLE
-        self.current_detail = "Waiting for misstion"
+        self.current_detail = "Waiting for mission"
 
         # mission manager의 미션 상태 구독
         self.mission_state_subscriber = self.create_subscription(
@@ -78,7 +91,7 @@ class BehaviorExecutorNode(Node):
         )
 
         #현재 행동 상태 발행
-        self.behavoir_state_publisher = self.create_publisher(
+        self.behavior_state_publisher = self.create_publisher(
             BehaviorState,
             "/behavior/state",
             10,
@@ -296,6 +309,7 @@ class BehaviorExecutorNode(Node):
 
     def object_behavior_selector(self) -> None:
         stage = self.blackboard.current_stage
+
         if stage == ObjectProcessStage.DETECTED:
             self.set_behavior(
                 BehaviorName.FIRST_ENCOUNTER,
@@ -332,6 +346,7 @@ class BehaviorExecutorNode(Node):
                 BehaviorStatus.RUNNING,
                 "Detailed observation is in progress"
             )
+            self.start_observation()
             return
 
         if stage == ObjectProcessStage.OBSERVATION_COMPLETED:
@@ -601,6 +616,163 @@ class BehaviorExecutorNode(Node):
             ObjectProcessStage.FAILED
         )
 
+    def start_observation(self) -> None:
+        if self.observe_object_action_active:
+            return
+        encounter_result = self.blackboard.encounter_result
+        curiosity_decision = self.blackboard.curiosity_decision
+
+        if encounter_result is None:
+            self.get_logger().warning(
+                "Cannot start observation : encounter_result is missing"
+            )
+            self.blackboard.current_stage = (
+                ObjectProcessStage.FAILED
+            )
+            return
+
+        if curiosity_decision is None:
+            self.get_logger().warning(
+                "Cannot start observation : curiosity_decision is missing"
+            )
+            self.blackboard.current_stage = (
+                ObjectProcessStage.FAILED
+            )
+            return
+
+        if not self.observe_object_action_client.server_is_ready():
+            self.get_logger().warning(
+                "Observe Object action server is not ready"
+            )
+            return
+
+        goal_msg = ObserveObject.Goal()
+        goal_msg.encounter = encounter_result
+        goal_msg.decision = curiosity_decision
+
+        self.observe_object_goal_active = True
+
+        self.get_logger().info(
+            "::Observation goal requested::\n"
+            f"detection_id = {encounter_result.detection_id}\n"
+            f"object_name = {encounter_result.label.object_name}"
+        )
+
+        send_goal_future = (
+            self.observe_object_action_client.send_goal_async(
+                goal_msg,
+                feedback_callback=(
+                    self.observation_feedback_callback
+                ),
+            )
+        )
+        send_goal_future.add_done_callback(
+            self.observation_goal_response_callback
+        )
+
+    def observation_goal_response_callback(
+            self,
+            future,
+    ) -> None:
+        try:
+            goal_handle = future.result()
+        except Exception as error:
+            self.get_logger().error(
+                f"Failed to send observation goal : {error}"
+            )
+            self.observe_object_goal_active = False
+            self.blackboard.current_stage = (
+                ObjectProcessStage.FAILED
+            )
+            return
+
+        if not goal_handle.accepted:
+            self.get_logger().warning(
+                "Observation goal was rejected"
+            )
+            self.observe_object_goal_active = False
+            self.blackboard.current_stage = (
+                ObjectProcessStage.FAILED
+            )
+            return
+
+        self.observe_object_goal_handle = goal_handle
+
+        self.get_logger().info(
+            "Observation goal was accepted"
+        )
+
+        result_future = goal_handle.get_result_async()
+
+        result_future.add_done_callback(
+            self.observation_result_callback
+        )
+
+    def observation_feedback_callback(
+            self,
+            feedback_msg,
+    ) -> None:
+
+        feedback = feedback_msg.feedback
+
+        self.current_detail = (
+            f"{feedback.stage} : {feedback.message} ({feedback.progress * 100.0:.0f}%)"
+        )
+        self.get_logger().info(
+            "::Observation feedback::\n"
+            f"stage = {feedback.stage}\n"
+            f"progress = {feedback.progress}\n"
+            f"message = {feedback.message}"
+        )
+
+    def observation_result_callback(
+        self,
+        future,
+    ) -> None:
+
+        self.observe_object_goal_active = False
+        self.observe_object_goal_handle = None
+
+        try:
+            wrapped_result = future.result()
+            observation_result = (
+                wrapped_result.result.result
+            )
+        except Exception as error:
+            self.get_logger().error(
+                f"Failed to receive observation result : {error}"
+            )
+            self.blackboard.current_stage = (
+                ObjectProcessStage.FAILED
+            )
+            return
+
+        self.blackboard.observation_result = observation_result
+
+        if not observation_result.success:
+            self.get_logger().warning(
+                "::Observation failed::\n"
+                f"detection_id = {observation_result.detection_id}\n"
+                f"reason = {observation_result.failure_reason}"
+            )
+            self.blackboard.current_stage = (
+                ObjectProcessStage.FAILED
+            )
+            return
+
+        self.get_logger().info(
+            "::Observation completed::\n"
+            f"detection_id = {observation_result.detection_id}\n"
+            f"saved_to_database = {observation_result.saved_to_database}"
+        )
+        self.blackboard.current_stage = (
+            ObjectProcessStage.OBSERVATION_COMPLETED
+        )
+
+
+
+
+
 #행동 변동시 변경하고 바로 발행
     def set_behavior(
             self,
@@ -636,7 +808,7 @@ class BehaviorExecutorNode(Node):
         msg.detail = self.current_detail
         msg.updated_at = self.get_clock().now().to_msg()
 
-        self.behavoir_state_publisher.publish(msg)
+        self.behavior_state_publisher.publish(msg)
 
 def main(args=None) -> None:
     rclpy.init(args=args)

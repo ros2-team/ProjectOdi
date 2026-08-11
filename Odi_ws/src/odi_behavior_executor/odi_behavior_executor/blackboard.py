@@ -50,7 +50,7 @@ class OdiBlackboard:
     current_object: Optional[DetectedObject] = None
     current_stage: ObjectProcessStage = ObjectProcessStage.NONE
 
-    encounter_result: Optional[DetectedObject] = None
+    encounter_result: Optional[EncounterResult] = None
     curiosity_decision: Optional[CuriosityDecision] = None
     observation_result: Optional[ObservationResult] = None
 
