@@ -79,8 +79,8 @@ class CuriosityEngineNode(Node):
         )
 
         self.get_logger().info('==========================================')
-        self.get_logger().info('Curiosity Engine Node initialized')
-        self.get_logger().info('Waiting for perception data...')
+        self.get_logger().info('Curiosity 실행 및 초기화 ...')
+        self.get_logger().info('사진 기다리는 중...')
         self.get_logger().info('==========================================')
 
     # ============================================================
@@ -155,7 +155,7 @@ class CuriosityEngineNode(Node):
 
             # DB가 비어있는 경우
             if not rows:
-                self.get_logger().info('[MEMORY] DB is empty. New object.')
+                self.get_logger().info('[MEMORY] DB 비어있음 ~~')
                 return MemoryInfo(visit_count=0, is_new=True)
 
             # 2. 후보 하나씩 비교하여 최고 유사도 탐색
@@ -175,8 +175,14 @@ class CuriosityEngineNode(Node):
 
                 similarity = self.calculator.calculate_similarity(candidate, db_candidate)
 
+                # self.get_logger().info(
+                #     f'[MEMORY] {row["object_name"]} similarity={similarity:.2f}'
+                # )
+
                 self.get_logger().info(
-                    f'[MEMORY] {row["object_name"]} similarity={similarity:.2f}'
+                    f'[MEMORY] DB id={row["id"]} | '
+                    f'{row["object_name"]} | '
+                    f'similarity={similarity:.2f}'
                 )
 
                 if similarity > best_similarity:
@@ -187,9 +193,13 @@ class CuriosityEngineNode(Node):
             similarity_threshold = 0.80
 
             if best_row is not None and best_similarity >= similarity_threshold:
-                self.get_logger().info('[MEMORY] Existing object found')
-                self.get_logger().info(f'[MEMORY] best_similarity={best_similarity:.2f}')
-                self.get_logger().info(f'[MEMORY] matched_object={best_row["object_name"]}')
+                self.get_logger().info('[MEMORY] 기존에 본 객체 ')
+                self.get_logger().info(
+                    f'[MEMORY] Best match: '
+                    f'id={best_row["id"]} | '
+                    f'{best_row["object_name"]} | '
+                    f'similarity={best_similarity:.2f}'
+                )
 
                 # 방문 횟수 계산 (동일 속성 완전 일치 row 수 조회)
                 count_sql = """
@@ -228,7 +238,7 @@ class CuriosityEngineNode(Node):
                 return memory
 
             # Threshold 미만인 경우
-            self.get_logger().info('[MEMORY] New object found')
+            self.get_logger().info('[MEMORY] 새로운 객체')
             self.get_logger().info(f'[MEMORY] best_similarity={best_similarity:.2f}')
 
             return MemoryInfo(visit_count=0, is_new=True)
