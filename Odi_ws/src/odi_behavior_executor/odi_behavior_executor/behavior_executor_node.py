@@ -4,6 +4,7 @@ from enum import Enum
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
+from action_msgs.msg import GoalStatus
 
 from odi_interfaces.msg import BehaviorState
 from odi_interfaces.msg import MissionState
@@ -11,8 +12,10 @@ from odi_interfaces.msg import DetectedObjectArray
 
 from odi_interfaces.srv import EvaluateCuriosity
 
+from odi_interfaces.action import Explore
 from odi_interfaces.action import FirstEncounter
 from odi_interfaces.action import ObserveObject
+
 
 
 from odi_behavior_executor.blackboard import(
@@ -44,6 +47,16 @@ class BehaviorExecutorNode(Node):
 
         self.blackboard = OdiBlackboard()
 
+        # 탐험 액션 클라이언트
+        self.explore_action_client = ActionClient(
+            self,
+            Explore,
+            "/explore",
+        )
+        self.explore_goal_active = False
+        self.explore_goal_handle = None
+        self.explore_cancel_requested = False
+
         #인카운터 액션 클라이언트
         self.first_encounter_action_client = ActionClient(
             self,
@@ -66,8 +79,8 @@ class BehaviorExecutorNode(Node):
             ObserveObject,
             "/observe_object",
         )
-        self.observe_object_action_active = False
-        self.observe_object_action_handle = None
+        self.observe_object_goal_active = False
+        self.observe_object_goal_handle = None
 
 
         self.current_behavior = BehaviorName.NONE
@@ -152,6 +165,8 @@ class BehaviorExecutorNode(Node):
         )
         self.blackboard.detection_locked = True
         self.blackboard.exploration_paused = True
+
+        self.pause_exploration()
 
         self.blackboard.pending_objects.extend(
             valid_objects
@@ -281,6 +296,7 @@ class BehaviorExecutorNode(Node):
                 BehaviorStatus.RUNNING,
                 "Exploring an unknown area"
             )
+            self.start_exploration()
             return
 
         #일기 생성
@@ -374,6 +390,186 @@ class BehaviorExecutorNode(Node):
             BehaviorStatus.IDLE,
             "No object behavior selected",
         )
+
+    def start_exploration(self) -> None:
+        if self.explore_goal_active:
+            return
+        if self.blackboard.exploration_paused:
+            return
+        if not self.explore_action_client.server_is_ready():
+            self.get_logger().warning(
+                "Exploration action server is not ready"
+            )
+            return
+
+        goal_msg = Explore.Goal()
+        goal_msg.session_id = "odi_exploration"
+        goal_msg.mode = "START"
+
+        self.explore_goal_active = True
+        self.blackboard.exploration_active = True
+
+        self.get_logger().info(
+            "::Explore goal requested\n"
+            f"session_id = {goal_msg.session_id}\n"
+            f"mode = {goal_msg.mode}"
+        )
+
+        send_goal_future = (
+            self.explore_action_client.send_goal_async(
+                goal_msg,
+                feedback_callback=(
+                    self.explore_feedback_callback
+                ),
+            )
+        )
+
+        send_goal_future.add_done_callback(
+            self.explore_goal_response_callback
+        )
+
+    def explore_goal_response_callback(
+            self,
+            future,
+    ) -> None:
+        try:
+            goal_handle = future.result()
+        except Exception as error:
+            self.get_logger().error(
+                f"Failed to send Explore goal : {error}"
+            )
+            self.explore_goal_active = False
+            self.blackboard.exploration_active = False
+            return
+
+        if not goal_handle.accepted:
+            self.get_logger().warning(
+                "Explore goal was rejected"
+            )
+            self.explore_goal_active = False
+            self.blackboard.exploration_active = False
+            return
+
+        self.explore_goal_handle = goal_handle
+
+        self.get_logger().info(
+            "Explore goal was accepted"
+        )
+
+        result_future = goal_handle.get_result_async()
+        result_future.add_done_callback(
+            self.explore_result_callback
+        )
+        if self.blackboard.exploration_paused:
+            self.pause_exploration()
+
+    def explore_feedback_callback(
+            self,
+            feedback_msg,
+    ) -> None:
+
+        feedback = feedback_msg.feedback
+        self.current_detail = (
+            f"\n::Exploring area : {feedback.current_area_id}"
+            f"( {feedback.progress * 100.0:.0f}% )"
+        )
+        self.get_logger().info(
+            "\n::Explore feedback::\n"
+            f"area = {feedback.current_area_id}\n"
+            f"progress = {feedback.progress:.2f}"
+        )
+
+    def explore_result_callback(
+            self,
+            future,
+    ) -> None:
+
+        self.explore_goal_active = False
+        self.explore_goal_handle = None
+        self.blackboard.exploration_active = False
+
+        try:
+            wrapped_result = future.result()
+            explore_result = wrapped_result.result
+
+        except Exception as error:
+            self.get_logger().error(
+                f"Failed to receive Explore result : {error}"
+            )
+            return
+
+        if wrapped_result.status == GoalStatus.STATUS_CANCELED:
+            self.get_logger().info(
+                "\n::Explore canceled::\n"
+                f"message = {explore_result.message}"
+            )
+
+            self.blackboard.exploration_completed = False
+            return
+        if wrapped_result.status == GoalStatus.STATUS_SUCCEEDED:
+            self.get_logger().info(
+                "\n::Explore complete::\n"
+                f"status = {explore_result.status}\n"
+                f"visited_area_id = {explore_result.visited_area_id}\n"
+                f"message = {explore_result.message}"
+            )
+
+            self.blackboard.exploration_completed = True
+            return
+
+        self.get_logger().warning(
+            "\n::Explore ended unexpectedly::\n"
+            f"goal_status = {wrapped_result.status}\n"
+            f"message = {explore_result.message}"
+        )
+
+        self.blackboard.exploration_completed = False
+
+    def pause_exploration(self) -> None:
+        if not self.explore_goal_active:
+            return
+        if self.explore_goal_handle is None:
+            return
+        if self.explore_cancel_requested:
+            return
+
+        self.explore_cancel_requested = True
+        self.get_logger().info(
+            "Exploration cancel requested"
+        )
+        cancel_future = (
+            self.explore_goal_handle.cancel_goal_async()
+        )
+        cancel_future.add_done_callback(
+            self.explore_cancel_callback
+        )
+
+    def explore_cancel_callback(
+            self,
+            future,
+    ) -> None:
+
+        self.explore_cancel_requested = False
+
+        try:
+            cancel_response = future.result()
+        except Exception as error:
+            self.get_logger().error(
+                f"Failed to cancel explore goal : {error}"
+            )
+            return
+
+        if len(cancel_response.goals_canceling) == 0:
+            self.get_logger().warning(
+                "Explore goal cancel was rejected"
+            )
+            return
+
+        self.get_logger().info(
+            "Explore goal cancel was accepted"
+        )
+
+
 
     def start_first_encounter(self) -> None:
         # encounter 액션 실행 함수
@@ -617,8 +813,9 @@ class BehaviorExecutorNode(Node):
         )
 
     def start_observation(self) -> None:
-        if self.observe_object_action_active:
+        if self.observe_object_goal_active:
             return
+
         encounter_result = self.blackboard.encounter_result
         curiosity_decision = self.blackboard.curiosity_decision
 
