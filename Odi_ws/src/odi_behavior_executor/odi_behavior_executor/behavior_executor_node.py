@@ -702,9 +702,16 @@ class BehaviorExecutorNode(Node):
             f"image_path = {encounter_result.image_path}\n"
             f"object_name = {encounter_result.label.object_name}"
         )
+
+        self.consume_motivation(
+            5,
+            "First encounter completed ( -5 )",
+        )
+
         self.blackboard.current_stage = (
             ObjectProcessStage.ENCOUNTER_COMPLETED
         )
+
     def start_curiosity_evaluation(self) -> None:
         if self.curiosity_request_active:
             return
@@ -964,6 +971,22 @@ class BehaviorExecutorNode(Node):
         )
         self.blackboard.current_stage = (
             ObjectProcessStage.OBSERVATION_COMPLETED
+        )
+
+    def consume_motivation(
+            self,
+            amount: int,
+            reason: str,
+    ) -> None:
+        previous_motivation = (self.blackboard.motivation)
+        self.blackboard.motivation = max(
+            0,
+            self.blackboard.motivation - amount
+        )
+        self.get_logger().info(
+            "\n::Motivation consumed::\n"
+            f"reason = {reason}\n"
+            f"{previous_motivation} -> {self.blackboard.motivation}"
         )
 
 

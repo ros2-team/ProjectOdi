@@ -36,6 +36,11 @@ class OdiBlackboard:
     battery_low: bool = False
     system_ready : bool = False
 
+    # Motivation status
+    motivation: int = 100
+    observation_count: int = 0
+    minimum_observation_count: int = 3
+
     # Exploring status
     exploration_active: bool = False
     exploration_paused: bool = False
@@ -64,6 +69,10 @@ class OdiBlackboard:
         self.emergency = False
         self.battery_low = False
         self.system_ready = False
+
+        self.motivation = 100
+        self.observation_count = 0
+        self.minimum_observation_count = 3
 
         self.exploration_active = False
         self.exploration_paused = False
