@@ -4,6 +4,9 @@ import time
 
 import rclpy
 from rclpy.action import ActionServer
+from rclpy.action import CancelResponse
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from odi_interfaces.action import Explore
@@ -14,16 +17,25 @@ class MockExploreServer(Node):
     def __init__(self) -> None:
         super().__init__("mock_explore_server")
 
+        self.callback_group = ReentrantCallbackGroup()
+
         self.action_server = ActionServer(
             self,
             Explore,
             "/explore",
-            self.execute_callback,
+            execute_callback = self.execute_callback,
+            cancel_callback = self.cancel_callback,
+            callback_group = self.callback_group,
         )
 
         self.get_logger().info(
             "Mock Explore Server is Running"
         )
+    def cancel_callback(self,cancel_request):
+        self.get_logger().info(
+            "Explore cancel request received"
+        )
+        return CancelResponse.ACCEPT
 
     def execute_callback(
         self,
@@ -108,13 +120,17 @@ def main(args=None) -> None:
 
     node = MockExploreServer()
 
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+
     try:
-        rclpy.spin(node)
+        executor.spin()
 
     except KeyboardInterrupt:
         pass
 
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 
