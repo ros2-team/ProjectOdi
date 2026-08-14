@@ -172,13 +172,13 @@ class BehaviorExecutorNode(Node):
             valid_objects
         )
         self.get_logger().info(
-            "::Detected object batch received::\n"
+            "\n::Detected object batch received::\n"
             f"{len(valid_objects)} object"
         )
 
         for detected_object in valid_objects:
             self.get_logger().info(
-                "::Queued detected object::\n"
+                "\n::Queued detected object::\n"
                 f"id = {detected_object.detection_id}\n"
                 f"class = {detected_object.class_name}\n"
                 f"confidence = {detected_object.confidence:.2f}"
@@ -187,7 +187,7 @@ class BehaviorExecutorNode(Node):
 
     def select_next_object(self) -> bool:
         self.get_logger().info(
-            "::select_next_object called::\n"
+            "\n::select_next_object called::\n"
             f"current_object={self.blackboard.current_object}\n"
             f"pending_count={len(self.blackboard.pending_objects)}"
         )
@@ -217,7 +217,7 @@ class BehaviorExecutorNode(Node):
         current_object = self.blackboard.current_object
 
         self.get_logger().info(
-            "::Next object selected::\n"
+            "\n::Next object selected::\n"
             f"id = {current_object.detection_id}\n"
             f"class = {current_object.class_name}"
         )
@@ -261,6 +261,7 @@ class BehaviorExecutorNode(Node):
                 "Emergency detected"
             )
             return
+
         # 우선순위 2 : 배터리 부족 또는 복귀 요청
         if(self.blackboard.battery_low
            or self.blackboard.return_requested
@@ -271,10 +272,19 @@ class BehaviorExecutorNode(Node):
                 "Returning to the home position"
             )
             return
-        # 우선순위 3 : 현재 처리 중인 물체
+
+        # 우선순위 3 : 탐험 종료 조건
+        if (self.blackboard.mission_state == "EXPLORING"
+            and self.should_finish_exploration()
+        ):
+            self.finish_exploration()
+            return
+
+        # 현재 처리 중인 물체
         if self.blackboard.current_object is not None:
             self.object_behavior_selector()
             return
+
         #대기중인 물체가 있는데 현재 물체가 없다면 다음 물체 선택
         if self.blackboard.pending_objects:
             self.select_next_object()
@@ -410,7 +420,7 @@ class BehaviorExecutorNode(Node):
         self.blackboard.exploration_active = True
 
         self.get_logger().info(
-            "::Explore goal requested\n"
+            "\n::Explore goal requested\n"
             f"session_id = {goal_msg.session_id}\n"
             f"mode = {goal_msg.mode}"
         )
@@ -569,6 +579,32 @@ class BehaviorExecutorNode(Node):
             "Explore goal cancel was accepted"
         )
 
+    def should_finish_exploration(self) -> bool:
+
+        motivation_empty = (
+            self.blackboard.motivation <= 0
+        )
+
+        enough_observations = (
+            self.blackboard.observation_count
+            >= self.blackboard.minimum_observation_count
+        )
+
+        return (
+            motivation_empty
+            and enough_observations
+        )
+
+    def finish_exploration(self) -> None:
+        self.get_logger().info(
+            "\n::Exploration finish condition met::\n"
+            f"motivation = {self.blackboard.motivation}\n"
+            f"observation_count = {self.blackboard.observation_count}"
+        )
+        if self.explore_goal_active:
+            self.pause_exploration()
+
+        self.blackboard.return_requested = True
 
 
     def start_first_encounter(self) -> None:
@@ -601,7 +637,7 @@ class BehaviorExecutorNode(Node):
             ObjectProcessStage.ENCOUNTERING
         )
         self.get_logger().info(
-            "::First encounter goal requested::\n"
+            "\n::First encounter goal requested::\n"
             f"id = {current_object.detection_id}\n"
             f"class = {current_object.class_name}"
         )
@@ -659,7 +695,7 @@ class BehaviorExecutorNode(Node):
             f"{feedback.stage} : {feedback.message} ({feedback.progress * 100.0:.0f}%)"
         )
         self.get_logger().info(
-            "::First encounter feedback::\n"
+            "\n::First encounter feedback::\n"
             f"stage = {feedback.stage}\n"
             f"progress = {feedback.progress: .2f}\n"
             f"message = {feedback.message}"
@@ -687,7 +723,7 @@ class BehaviorExecutorNode(Node):
 
         if not encounter_result.success:
             self.get_logger().warning(
-                "::First encounter failed::\n"
+                "\n::First encounter failed::\n"
                 f"detection_id = {encounter_result.detection_id}\n"
                 f"reason = {encounter_result.failure_reason}"
             )
@@ -697,7 +733,7 @@ class BehaviorExecutorNode(Node):
             return
 
         self.get_logger().info(
-            "::First encounter completed::\n"
+            "\n::First encounter completed::\n"
             f"detection_id = {encounter_result.detection_id}\n"
             f"image_path = {encounter_result.image_path}\n"
             f"object_name = {encounter_result.label.object_name}"
@@ -742,7 +778,7 @@ class BehaviorExecutorNode(Node):
         )
 
         self.get_logger().info(
-            "::Curiosity evaluation requested::\n"
+            "\n::Curiosity evaluation requested::\n"
             f"detection_id = {encounter_result.detection_id}"
         )
 
@@ -766,7 +802,7 @@ class BehaviorExecutorNode(Node):
 
         if not response.success:
             self.get_logger().warning(
-                "::Curiosity evaluation failed::\n"
+                "\n::Curiosity evaluation failed::\n"
                 f"message = {response.message}"
             )
             self.blackboard.current_stage = (
@@ -807,9 +843,15 @@ class BehaviorExecutorNode(Node):
             return
 
         if decision.action == "IGNORE":
+            self.consume_motivation(
+                2,
+                "Object ignored",
+            )
+
             self.blackboard.current_stage = (
                 ObjectProcessStage.IGNORED
             )
+
             return
 
         self.get_logger().warning(
@@ -857,7 +899,7 @@ class BehaviorExecutorNode(Node):
         self.observe_object_goal_active = True
 
         self.get_logger().info(
-            "::Observation goal requested::\n"
+            "\n::Observation goal requested::\n"
             f"detection_id = {encounter_result.detection_id}\n"
             f"object_name = {encounter_result.label.object_name}"
         )
@@ -923,7 +965,7 @@ class BehaviorExecutorNode(Node):
             f"{feedback.stage} : {feedback.message} ({feedback.progress * 100.0:.0f}%)"
         )
         self.get_logger().info(
-            "::Observation feedback::\n"
+            "\n::Observation feedback::\n"
             f"stage = {feedback.stage}\n"
             f"progress = {feedback.progress}\n"
             f"message = {feedback.message}"
@@ -955,7 +997,7 @@ class BehaviorExecutorNode(Node):
 
         if not observation_result.success:
             self.get_logger().warning(
-                "::Observation failed::\n"
+                "\n::Observation failed::\n"
                 f"detection_id = {observation_result.detection_id}\n"
                 f"reason = {observation_result.failure_reason}"
             )
@@ -965,13 +1007,22 @@ class BehaviorExecutorNode(Node):
             return
 
         self.get_logger().info(
-            "::Observation completed::\n"
+            "\n::Observation completed::\n"
             f"detection_id = {observation_result.detection_id}\n"
             f"saved_to_database = {observation_result.saved_to_database}"
         )
+
+        self.consume_motivation(
+            10,
+            "Detailed observation completed",
+        )
+        self.blackboard.observation_count += 1
+
         self.blackboard.current_stage = (
             ObjectProcessStage.OBSERVATION_COMPLETED
         )
+
+
 
     def consume_motivation(
             self,
@@ -1016,7 +1067,7 @@ class BehaviorExecutorNode(Node):
 
         if behavior_changed:
             self.get_logger().info(
-                "::Behavior changed::\n"
+                "\n::Behavior changed::\n"
                 f"{previous_behavior.value} -> {behavior.value}"
             )
         self.publish_current_behavior()
