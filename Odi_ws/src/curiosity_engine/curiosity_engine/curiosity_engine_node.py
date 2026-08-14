@@ -5,20 +5,17 @@ from rclpy.node import Node
 import mysql.connector
 from mysql.connector import Error
 
-# ============================================================
-# ROS2 Interface
-# ============================================================
+from odi_interfaces.msg import CuriosityDecision
+from odi_interfaces.srv import EvaluateCuriosity
 from odi_interfaces.msg import SemanticLabel
 
-# ============================================================
-# Curiosity Engine 내부 모듈
-# ============================================================
 from curiosity_engine.core import (
     ObjectCandidate,
     MemoryInfo,
     CuriosityCalculator,
     CuriosityPolicy
 )
+from curiosity_engine.core import weights as W
 
 
 class CuriosityEngineNode(Node):
@@ -26,51 +23,26 @@ class CuriosityEngineNode(Node):
     def __init__(self):
         super().__init__('curiosity_engine_node')
 
-        # ========================================================
-        # 1. MySQL DB 연결
-        # ========================================================
+        # DB 접속 정보는 파라미터로 뺀다 (자격증명 하드코딩 방지)
+        self.declare_parameter('db_host', '192.168.0.20')
+        self.declare_parameter('db_port', 3306)
+        self.declare_parameter('db_user', 'yyj')
+        self.declare_parameter('db_password', '1234')
+        self.declare_parameter('db_name', 'Odi_DB')
+
         self.conn = None
         self.cursor = None
+        self.init_db_connection()
 
-        try:
-            self.conn = mysql.connector.connect(
-                host='192.168.0.20',
-                port=3306,
-                user='yyj',
-                password='1234',
-                database='Odi_DB'
-            )
-            self.cursor = self.conn.cursor(dictionary=True)
-
-            if self.conn.is_connected():
-                self.get_logger().info('MySQL DB 연결 성공!!!!!!!!!!!!!!!!!!!!!')
-
-        except Error as e:
-            self.get_logger().error(f'MySQL connection failed: {e}')
-            self.conn = None
-            self.cursor = None
-
-        # ========================================================
-        # 2. DB 테이블 확인
-        # ========================================================
-        if self.cursor is not None:
-            try:
-                self.cursor.execute("SHOW TABLES")
-                tables = self.cursor.fetchall()
-                for table in tables:
-                    self.get_logger().info(f'[DB TABLE] {table}')
-            except Error as e:
-                self.get_logger().error(f'Table query failed: {e}')
-
-        # ========================================================
-        # 3. Curiosity 계산 모듈
-        # ========================================================
         self.calculator = CuriosityCalculator()
         self.policy = CuriosityPolicy()
 
-        # ========================================================
-        # 4. Perception 데이터 구독
-        # ========================================================
+        self.srv_curiosity = self.create_service(
+            EvaluateCuriosity,
+            '/curiosity/evaluate',
+            self.evaluate_curiosity_callback
+        )
+
         self.sub_perception = self.create_subscription(
             SemanticLabel,
             '/perception/scene_data',
@@ -79,26 +51,135 @@ class CuriosityEngineNode(Node):
         )
 
         self.get_logger().info('==========================================')
-        self.get_logger().info('Curiosity 실행 및 초기화 ...')
-        self.get_logger().info('사진 기다리는 중...')
+        self.get_logger().info('Curiosity Engine 준비완!!!!!서비스 요청 기다림 ')
         self.get_logger().info('==========================================')
 
     # ============================================================
-    # Perception Callback
+    # DB 연결
     # ============================================================
-    def perception_callback(self, msg: SemanticLabel):
-        self.get_logger().info('------------------------------------------')
-        self.get_logger().info('[PERCEPTION] SemanticLabel received')
 
-        # 인지 데이터 출력
-        self.get_logger().info(f'Object Name     : {msg.object_name}')
-        self.get_logger().info(f'Primary Color   : {msg.object_primary_color}')
-        self.get_logger().info(f'Secondary Color : {msg.object_secondary_color}')
-        self.get_logger().info(f'Material        : {msg.object_material}')
-        self.get_logger().info(f'Shape           : {msg.object_shape}')
-        self.get_logger().info(f'Condition       : {msg.object_condition}')
+    def init_db_connection(self):
+        try:
+            self.conn = mysql.connector.connect(
+                host=self.get_parameter('db_host').value,
+                port=self.get_parameter('db_port').value,
+                user=self.get_parameter('db_user').value,
+                password=self.get_parameter('db_password').value,
+                database=self.get_parameter('db_name').value,
+                autocommit=True   # ★ 없으면 첫 SELECT 스냅샷에 갇혀
+                                  #   다른 노드가 INSERT한 행이 영원히 안 보인다
+            )
+            self.cursor = self.conn.cursor(dictionary=True)
 
-        # 계산용 ObjectCandidate 생성
+            if self.conn.is_connected():
+                self.get_logger().info('MySQL DB 연결 성공')
+
+        except Error as e:
+            self.get_logger().error(f'MySQL connection failed: {e}')
+            self.conn = None
+            self.cursor = None
+
+    def ensure_connection(self):
+        """조회 직전에 커넥션 살아있는지 확인하고 필요하면 재연결."""
+        if self.conn is None:
+            self.init_db_connection()
+            return self.cursor is not None
+        try:
+            self.conn.ping(reconnect=True, attempts=3, delay=1)
+            return True
+        except Error as e:
+            self.get_logger().error(f'[DB] ping failed: {e}')
+            return False
+
+    # ============================================================
+    # 공통 평가 로직 (서비스/토픽 양쪽에서 재사용)
+    # ============================================================
+
+    def evaluate(self, candidate: ObjectCandidate):
+        """반환: (memory, calc_result, action) 또는 실패 시 None"""
+        memory = self.get_memory_from_db(candidate)
+        if memory is None:
+            return None
+
+        calc_result = self.calculator.calculate_score(candidate, memory)
+        action = self.policy.decide_action(calc_result['score'])
+
+        self.log_result(candidate, memory, calc_result, action)
+        return memory, calc_result, action
+
+    def log_result(self, candidate, memory, calc, action):
+        self.get_logger().info('==========================================')
+        self.get_logger().info('[CURIOSITY RESULT]')
+        self.get_logger().info(f'Object      : {candidate.object_name}')
+        self.get_logger().info(f'Similarity  : {memory.similarity:.2f}')
+        self.get_logger().info(f'IsNew       : {memory.is_new}')
+        self.get_logger().info(f'Visit Count : {memory.visit_count}')
+        self.get_logger().info(
+            f'Novelty     : {calc["novelty"]:.2f} '
+            f'x decay {calc["decay"]:.2f} -> {calc["novelty_term"]:.2f}'
+        )
+        self.get_logger().info(
+            f'Change      : {calc["change"]:.2f} -> {calc["change_term"]:.2f} '
+            f'{calc["changed_features"]}'
+        )
+        self.get_logger().info(f'Curiosity   : {calc["score"]:.2f}')
+        self.get_logger().info(f'Decision    : {action}')
+        self.get_logger().info('==========================================')
+
+    # ============================================================
+    # Service Callback
+    # ============================================================
+
+    def evaluate_curiosity_callback(self, request, response):
+        self.get_logger().info('[SERVICE] 새로운 물건 평가 요청 들어옴')
+
+        encounter_data = request.encounter
+        label = encounter_data.label
+
+        candidate = ObjectCandidate(
+            object_name=label.object_name,
+            primary_color=label.object_primary_color,
+            secondary_color=label.object_secondary_color,
+            material=label.object_material,
+            shape=label.object_shape,
+            condition=label.object_condition
+        )
+
+        result = self.evaluate(candidate)
+        if result is None:
+            response.success = False
+            response.message = 'DB Memory retrieval failed'
+            self.get_logger().error('[SERVICE] DB Memory retrieval failed')
+            return response
+
+        memory, calc_result, action_decision = result
+
+        decision_msg = CuriosityDecision()
+        decision_msg.detection_id = str(getattr(encounter_data, 'detection_id', ''))
+        decision_msg.curiosity_score = float(calc_result['score'])
+        decision_msg.similarity_score = float(memory.similarity)
+        decision_msg.action = str(action_decision)
+        decision_msg.reason = (
+            f'Novelty={calc_result["novelty"]:.2f}(x{calc_result["decay"]:.2f}), '
+            f'Change={calc_result["change"]:.2f}, '
+            f'Similarity={memory.similarity:.2f}, '
+            f'Visits={memory.visit_count}'
+        )
+        decision_msg.novel_features = list(calc_result['novel_features'])
+        decision_msg.duplicated_features = list(calc_result['duplicated_features'])
+        decision_msg.compared_record_count = int(memory.compared_record_count)
+        decision_msg.evaluated_at = self.get_clock().now().to_msg()
+
+        response.success = True
+        response.decision = decision_msg
+        response.message = '호기심 평가 완료ㅇㅇ'
+        return response
+
+    # ============================================================
+    # 인지 test callback
+    # ============================================================
+
+    def perception_callback(self, msg):
         candidate = ObjectCandidate(
             object_name=msg.object_name,
             primary_color=msg.object_primary_color,
@@ -108,148 +189,133 @@ class CuriosityEngineNode(Node):
             condition=msg.object_condition
         )
 
-        # World Memory DB 조회 (유사도 기반 비교)
-        memory = self.get_memory_from_db(candidate)
-
-        if memory is None:
-            self.get_logger().error('[MEMORY] Failed to retrieve memory from DB')
-            return
-
-        # 과거 정보 + 현재 정보로 호기심 계산
-        calc_result = self.calculator.calculate_score(candidate, memory)
-
-        # 행동 결정
-        decision = self.policy.decide_action(calc_result['score'])
-
-        # 결과 로그 출력
-        self.get_logger().info('==========================================')
-        self.get_logger().info('[CURIOSITY RESULT]')
-        self.get_logger().info(f'Object       : {candidate.object_name}')
-        self.get_logger().info(f'Visit Count  : {memory.visit_count}')
-
-        if 'novelty' in calc_result:
-            self.get_logger().info(f'Novelty      : {calc_result["novelty"]}')
-        if 'uncertainty' in calc_result:
-            self.get_logger().info(f'Uncertainty  : {calc_result["uncertainty"]}')
-        if 'change' in calc_result:
-            self.get_logger().info(f'Change       : {calc_result["change"]}')
-
-        self.get_logger().info(f'Curiosity    : {calc_result["score"]}')
-        self.get_logger().info(f'Decision     : {decision}')
-        self.get_logger().info('==========================================')
+        if self.evaluate(candidate) is None:
+            self.get_logger().error('[CURIOSITY] DB Memory retrieval failed')
 
     # ============================================================
-    # World Memory DB 조회
+    # DB 기억 조회
     # ============================================================
+
     def get_memory_from_db(self, candidate: ObjectCandidate):
-        if self.cursor is None:
+        """
+        1) 전체 기록과 유사도를 비교해 best match를 찾는다
+        2) best match가 임계값을 넘으면 '같은 개체'로 판정
+        3) 같은 개체의 '가장 최근 기록'을 가져와 change 비교 기준으로 삼는다
+
+        3번이 핵심 변경점.
+        best match는 '가장 닮은 행'이라 차이가 최소가 되도록 선택된 것이므로
+        변화 감지의 기준으로 쓰면 안 된다.
+        """
+        if self.cursor is None or not self.ensure_connection():
             self.get_logger().error('[DB] Cursor is not available')
             return None
 
-        # 1. DB 후보 전체 조회
-        find_sql = "SELECT * FROM detected_objects"
-
         try:
-            self.cursor.execute(find_sql)
+            self.cursor.execute('SELECT * FROM detected_objects')
             rows = self.cursor.fetchall()
 
-            # DB가 비어있는 경우
             if not rows:
-                self.get_logger().info('[MEMORY] DB 비어있음 ~~')
-                return MemoryInfo(visit_count=0, is_new=True)
+                self.get_logger().info('[MEMORY] DB is empty. New object.')
+                return MemoryInfo(visit_count=0, is_new=True,
+                                  similarity=0.0, compared_record_count=0)
 
-            # 2. 후보 하나씩 비교하여 최고 유사도 탐색
+            # --- 1) best match 탐색 ---
             best_similarity = 0.0
             best_row = None
 
             for row in rows:
-                # DB에 저장된 객체를 비교용 ObjectCandidate로 변환
-                db_candidate = ObjectCandidate(
-                    object_name=row['object_name'],
-                    primary_color=row['object_primary_color'],
-                    secondary_color=row['object_secondary_color'],
-                    material=row['object_material'],
-                    shape=row['object_shape'],
-                    condition=row['object_condition']
-                )
+                db_record = self.row_to_memory(row)
+                similarity = self.calculator.calculate_similarity(candidate, db_record)
 
-                similarity = self.calculator.calculate_similarity(candidate, db_candidate)
-
-                # self.get_logger().info(
-                #     f'[MEMORY] {row["object_name"]} similarity={similarity:.2f}'
-                # )
-
-                self.get_logger().info(
-                    f'[MEMORY] DB id={row["id"]} | '
-                    f'{row["object_name"]} | '
-                    f'similarity={similarity:.2f}'
+                self.get_logger().debug(
+                    f'[MEMORY] id={row["id"]} {row["object_name"]} sim={similarity:.2f}'
                 )
 
                 if similarity > best_similarity:
                     best_similarity = similarity
                     best_row = row
 
-            # 3. 임계값(Threshold) 판정
-            similarity_threshold = 0.80
+            compared_record_count = len(rows)
 
-            if best_row is not None and best_similarity >= similarity_threshold:
-                self.get_logger().info('[MEMORY] 기존에 본 객체 ')
+            # --- 2) 신규 판정 ---
+            if best_row is None or best_similarity < W.IDENTITY_THRESHOLD:
                 self.get_logger().info(
-                    f'[MEMORY] Best match: '
-                    f'id={best_row["id"]} | '
-                    f'{best_row["object_name"]} | '
-                    f'similarity={best_similarity:.2f}'
+                    f'[MEMORY] New object (best_similarity={best_similarity:.2f})'
+                )
+                return MemoryInfo(
+                    visit_count=0,
+                    is_new=True,
+                    similarity=best_similarity,
+                    compared_record_count=compared_record_count
                 )
 
-                # 방문 횟수 계산 (동일 속성 완전 일치 row 수 조회)
-                count_sql = """
-                    SELECT COUNT(*) AS visit_count
-                    FROM detected_objects
-                    WHERE object_name = %s
-                      AND object_primary_color = %s
-                      AND object_secondary_color = %s
-                      AND object_material = %s
-                      AND object_shape = %s
-                """
-                count_values = (
-                    best_row['object_name'],
-                    best_row['object_primary_color'],
-                    best_row['object_secondary_color'],
-                    best_row['object_material'],
-                    best_row['object_shape']
-                )
+            # --- 3) 기존 개체: 정체성으로 방문 횟수 + 최신 기록 조회 ---
+            self.get_logger().info(
+                f'[MEMORY] Existing object id={best_row["id"]} '
+                f'sim={best_similarity:.2f}'
+            )
 
-                self.cursor.execute(count_sql, count_values)
-                count_row = self.cursor.fetchone()
+            identity = (
+                best_row['object_name'],
+                best_row['object_material'],
+                best_row['object_shape'],
+            )
 
-                visit_count = count_row['visit_count'] if count_row is not None else 1
+            # <=> 는 MySQL의 NULL-safe equal.
+            # NULL <=> NULL 이 TRUE라서 'OR IS NULL' 나열이 필요 없다.
+            identity_where = """
+                WHERE object_name <=> %s
+                  AND object_material <=> %s
+                  AND object_shape <=> %s
+            """
 
-                self.get_logger().info(f'[MEMORY] visit_count={visit_count}')
+            self.cursor.execute(
+                f'SELECT COUNT(*) AS visit_count FROM detected_objects {identity_where}',
+                identity
+            )
+            count_row = self.cursor.fetchone()
+            visit_count = count_row['visit_count'] if count_row else 1
 
-                memory = MemoryInfo(visit_count=visit_count, is_new=False)
-                memory.object_name = best_row['object_name']
-                memory.primary_color = best_row['object_primary_color']
-                memory.secondary_color = best_row['object_secondary_color']
-                memory.material = best_row['object_material']
-                memory.shape = best_row['object_shape']
-                memory.condition = best_row['object_condition']
-                memory.similarity = best_similarity
+            # 같은 개체의 가장 최근 기록 = change 비교 기준
+            self.cursor.execute(
+                f'SELECT * FROM detected_objects {identity_where} ORDER BY id DESC LIMIT 1',
+                identity
+            )
+            latest_row = self.cursor.fetchone() or best_row
 
-                return memory
+            memory = self.row_to_memory(latest_row)
+            memory.is_new = False
+            memory.visit_count = visit_count
+            memory.similarity = best_similarity
+            memory.compared_record_count = compared_record_count
 
-            # Threshold 미만인 경우
-            self.get_logger().info('[MEMORY] 새로운 객체')
-            self.get_logger().info(f'[MEMORY] best_similarity={best_similarity:.2f}')
-
-            return MemoryInfo(visit_count=0, is_new=True)
+            self.get_logger().info(
+                f'[MEMORY] visit_count={visit_count}, '
+                f'latest_record_id={latest_row["id"]}'
+            )
+            return memory
 
         except Error as e:
             self.get_logger().error(f'[DB] Memory query failed: {e}')
             return None
 
+    @staticmethod
+    def row_to_memory(row) -> MemoryInfo:
+        """DB row → MemoryInfo 변환 (컬럼명 매핑을 한 곳에 모은다)"""
+        return MemoryInfo(
+            visit_count=0,
+            is_new=False,
+            object_name=row['object_name'],
+            primary_color=row['object_primary_color'],
+            secondary_color=row['object_secondary_color'],
+            material=row['object_material'],
+            shape=row['object_shape'],
+            condition=row['object_condition'],
+            record_id=row.get('id')
+        )
+
     # ============================================================
-    # Node 종료
-    # ============================================================
+
     def destroy_node(self):
         if self.cursor is not None:
             try:
@@ -257,11 +323,10 @@ class CuriosityEngineNode(Node):
             except Exception as e:
                 self.get_logger().error(f'[DB] Cursor close failed: {e}')
 
-        if self.conn is not None:
+        if self.conn is not None and self.conn.is_connected():
             try:
-                if self.conn.is_connected():
-                    self.conn.close()
-                    self.get_logger().info('[DB] MySQL connection closed')
+                self.conn.close()
+                self.get_logger().info('[DB] MySQL connection closed')
             except Exception as e:
                 self.get_logger().error(f'[DB] Connection close failed: {e}')
 
@@ -271,7 +336,6 @@ class CuriosityEngineNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = CuriosityEngineNode()
-
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
