@@ -56,6 +56,7 @@ class BehaviorExecutorNode(Node):
         self.explore_goal_active = False
         self.explore_goal_handle = None
         self.explore_cancel_requested = False
+        self.explore_mode = "FRONTIER"
 
         #인카운터 액션 클라이언트
         self.first_encounter_action_client = ActionClient(
@@ -138,6 +139,7 @@ class BehaviorExecutorNode(Node):
 
         if msg.state == "IDLE":
             self.blackboard.reset()
+            self.explore_mode = "FRONTIER"
 
     def detected_objects_callback(
             self,
@@ -414,7 +416,7 @@ class BehaviorExecutorNode(Node):
 
         goal_msg = Explore.Goal()
         goal_msg.session_id = "odi_exploration"
-        goal_msg.mode = "START"
+        goal_msg.mode = self.explore_mode
 
         self.explore_goal_active = True
         self.blackboard.exploration_active = True
@@ -518,19 +520,35 @@ class BehaviorExecutorNode(Node):
                 "\n::Explore canceled::\n"
                 f"message = {explore_result.message}"
             )
-
             self.blackboard.exploration_completed = False
             return
-        if wrapped_result.status == GoalStatus.STATUS_SUCCEEDED:
-            self.get_logger().info(
-                "\n::Explore complete::\n"
-                f"status = {explore_result.status}\n"
-                f"visited_area_id = {explore_result.visited_area_id}\n"
-                f"message = {explore_result.message}"
-            )
 
-            self.blackboard.exploration_completed = True
-            return
+        if wrapped_result.status == GoalStatus.STATUS_SUCCEEDED:
+            if explore_result.status == "FRONTIER_EXHAUSTED":
+                self.get_logger().info(
+                    "\n::Frontier exploration exhausted::\n"
+                    f"motivation = {self.blackboard.motivation}"
+                )
+                self.blackboard.exploration_completed = False
+
+                if not self.should_finish_exploration():
+                    self.explore_mode = "ROAM"
+                    self.get_logger().info(
+                        "Exploration mode changed : FRONTIER -> ROAM"
+                    )
+                    return
+
+                self.finish_exploration()
+                return
+
+            if explore_result.status == "COMPLETED":
+                self.get_logger().info(
+                    "\n::Explore complete::\n"
+                    f"mode = {self.explore_mode}\n"
+                    f"message = {explore_result.message}"
+                )
+                self.blackboard.exploration_completed = True
+                return
 
         self.get_logger().warning(
             "\n::Explore ended unexpectedly::\n"

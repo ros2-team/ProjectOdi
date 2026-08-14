@@ -50,17 +50,89 @@ class MockExploreServer(Node):
             f"mode = {request.mode}"
         )
 
+        if request.mode == "FRONTIER":
+            return self.run_frontier_mode(goal_handle)
+        if request.mode == "ROAM":
+            return self.run_roam_mode(goal_handle)
+        self.get_logger().warning(
+            f"Unknown explore mode : {request.mode}"
+        )
+        goal_handle.abort()
+
+        result = Explore.Result()
+        result.status = "FAILED"
+        result.visited_area_id = ""
+        result.message = (
+            f"Unknown explore mode : {request.mode}"
+        )
+
+        return result
+
+    def run_frontier_mode(
+            self,
+            goal_handle,
+    ) -> Explore.Result:
+
+        feedback = Explore.Feedback()
+        for index in range(5):
+            if goal_handle.is_cancel_requested:
+                self.get_logger().info(
+                    "Frontier exploration canceled"
+                )
+                goal_handle.canceled()
+                result = Explore.Result()
+                result.status = "CANCELED"
+                result.visited_area_id = (
+                    f"frontier_{index + 1}"
+                )
+                result.message = (
+                    f"Frontier exploration canceled"
+                )
+                return result
+
+            feedback.current_area_id = (
+                f"frontier_{index + 1}"
+            )
+            feedback.progress = (
+                (index + 1) / 5.0
+            )
+            goal_handle.publish_feedback(
+                feedback
+            )
+            self.get_logger().info(
+                "\nFrontier feedback::\n"
+                f"area = {feedback.current_area_id}\n"
+                f"progress = {feedback.progress:.2f}"
+            )
+            time.sleep(1.0)
+
+        self.get_logger().info(
+            "No more frontier candidates"
+        )
+        goal_handle.succeed()
+        result = Explore.Result()
+        result.status = "FRONTIER_EXHAUSTED"
+        result.visited_area_id = "frontier_end"
+        result.message = (
+            "No more frontier candidates"
+        )
+        return result
+
+    def run_roam_mode(
+        self,
+        goal_handle,
+    ) -> Explore.Result:
+
         feedback = Explore.Feedback()
 
         progress = 0.0
-        area_index = 1
+        roam_index = 1
 
         while rclpy.ok():
 
-            # Client에서 cancel 요청이 들어왔는지 확인
             if goal_handle.is_cancel_requested:
                 self.get_logger().info(
-                    "Explore cancel requested by client"
+                    "Roaming canceled"
                 )
 
                 goal_handle.canceled()
@@ -68,10 +140,10 @@ class MockExploreServer(Node):
                 result = Explore.Result()
                 result.status = "CANCELED"
                 result.visited_area_id = (
-                    f"area_{area_index}"
+                    f"roam_{roam_index}"
                 )
                 result.message = (
-                    "Exploration canceled for object processing."
+                    "Roaming canceled."
                 )
 
                 return result
@@ -79,7 +151,7 @@ class MockExploreServer(Node):
             progress += 0.05
 
             feedback.current_area_id = (
-                f"area_{area_index}"
+                f"roam_{roam_index}"
             )
 
             feedback.progress = progress
@@ -89,7 +161,7 @@ class MockExploreServer(Node):
             )
 
             self.get_logger().info(
-                "::Explore feedback::\n"
+                "::Roam feedback::\n"
                 f"area = {feedback.current_area_id}\n"
                 f"progress = {progress:.2f}"
             )
@@ -99,17 +171,17 @@ class MockExploreServer(Node):
             if progress >= 1.0:
                 break
 
-            area_index += 1
+            roam_index += 1
 
         goal_handle.succeed()
 
         result = Explore.Result()
         result.status = "COMPLETED"
         result.visited_area_id = (
-            f"area_{area_index}"
+            f"roam_{roam_index}"
         )
         result.message = (
-            "Mock exploration completed."
+            "Roaming completed."
         )
 
         return result
