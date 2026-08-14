@@ -425,6 +425,11 @@ class BehaviorExecutorNode(Node):
             f"mode = {goal_msg.mode}"
         )
 
+        if self.blackboard.exploration_started_at is None:
+            self.blackboard.exploration_started_at = (
+                self.get_clock().now().nanoseconds / 1e9
+            )
+
         send_goal_future = (
             self.explore_action_client.send_goal_async(
                 goal_msg,
@@ -590,17 +595,33 @@ class BehaviorExecutorNode(Node):
             >= self.blackboard.minimum_observation_count
         )
 
+        timeout = (
+            self.is_exploration_timeout()
+        )
+
+        if timeout:
+            return True
+
         return (
             motivation_empty
             and enough_observations
         )
 
     def finish_exploration(self) -> None:
+
+        started_at = self.blackboard.exploration_started_at
+        elapsed_time = 0.0
+        if started_at is not None:
+            now = self.get_clock().now().nanoseconds / 1e9
+            elapsed_time = now - started_at
+
         self.get_logger().info(
             "\n::Exploration finish condition met::\n"
             f"motivation = {self.blackboard.motivation}\n"
             f"observation_count = {self.blackboard.observation_count}"
+            f"elapsed_time = {elapsed_time:.1f}s"
         )
+
         if self.explore_goal_active:
             self.pause_exploration()
 
@@ -1022,8 +1043,6 @@ class BehaviorExecutorNode(Node):
             ObjectProcessStage.OBSERVATION_COMPLETED
         )
 
-
-
     def consume_motivation(
             self,
             amount: int,
@@ -1040,9 +1059,15 @@ class BehaviorExecutorNode(Node):
             f"{previous_motivation} -> {self.blackboard.motivation}"
         )
 
-
-
-
+    def is_exploration_timeout(self) -> bool:
+        started_at = self.blackboard.exploration_started_at
+        if started_at is None:
+            return False
+        now = self.get_clock().now().nanoseconds / 1e9
+        elapsed_time = now - started_at
+        return (
+            elapsed_time >= self.blackboard.exploration_maximum_time
+        )
 
 #행동 변동시 변경하고 바로 발행
     def set_behavior(
