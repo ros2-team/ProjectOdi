@@ -55,22 +55,36 @@ class CuriosityCalculator:
         반환: (similarity, matched, mismatched)
         """
         score = 0.0
+        total_weight = 0.0      # 실제로 비교 가능했던 가중치 합
         matched = []
         mismatched = []
 
-        # 미리 정의된 속성별 가중치를 순회하면서 비교 
         for attr, weight in W.SIM_WEIGHTS.items():
-            # 양똑 객체의 속성값을 정규화 
             a = normalize(getattr(candidate, attr, None))
             b = normalize(getattr(record, attr, None))
 
-            # 두 값 모두 존재하고 일치하는 경우만 유사도 점수 가산 
-            if a is not None and a == b:
+            # 한쪽이라도 비어 있으면 비교 불가 → 분모에서 제외
+            if a is None or b is None:
+                continue
+
+            total_weight += weight
+            if a == b:
                 score += weight
                 matched.append(attr)
             else:
-                # 어느 한쪽이라도 none이거나 값이 다르면 불일치로 분류
                 mismatched.append(attr)
+
+        # 비교 가능했던 속성만으로 비율을 다시 맞춘다
+        if total_weight > 0.0:
+            score = score / total_weight
+        else:
+            score = 0.0
+            
+        # 이름이 다르면 같은 개체일 수 없다.
+        # 색/재질/형태만으로 유사도가 부풀지 않도록 상한을 건다.
+        if normalize(getattr(candidate, 'object_name', None)) != \
+           normalize(getattr(record, 'object_name', None)):
+            score = min(score, W.NAME_MISMATCH_CAP)
 
         return score, matched, mismatched
 

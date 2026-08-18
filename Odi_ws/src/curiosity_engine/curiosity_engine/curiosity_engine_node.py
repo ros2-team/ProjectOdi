@@ -97,6 +97,23 @@ class CuriosityEngineNode(Node):
 
     def evaluate(self, candidate: ObjectCandidate):
         """반환: (memory, calc_result, action) 또는 실패 시 None"""
+
+        name = (candidate.object_name or '').strip().lower()
+
+        # 탐사 대상이 아닌 구조물/사람은 점수 계산 없이 즉시 종료
+        if name in W.IGNORE_CLASSES:
+            self.get_logger().info(f'[FILTER] "{name}" is not a target -> IGNORE')
+            memory = MemoryInfo(visit_count=0, is_new=True,
+                                similarity=0.0, compared_record_count=0)
+            calc_result = {
+                'novelty': 0.0, 'change': 0.0,
+                'novelty_term': 0.0, 'change_term': 0.0,
+                'decay': 1.0, 'score': 0.0,
+                'changed_features': [],
+                'novel_features': [], 'duplicated_features': [],
+            }
+            return memory, calc_result, 'IGNORE'
+
         memory = self.get_memory_from_db(candidate)
         if memory is None:
             return None
