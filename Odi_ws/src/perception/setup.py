@@ -24,7 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'front_cam_node = perception.front_cam_node:main',
+            'vlm_node = perception.vlm_node:main',
             'yolo_test_node = perception.yolo_test:main',
             'map_trinary_node = perception.map_trinary:main',
         ],

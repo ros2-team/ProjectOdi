@@ -18,7 +18,7 @@ class MapTrinary(Node):
 
     def __init__(self):
         super().__init__('map_trinary')
-        self.declare_parameter('thresh', 65)
+        self.declare_parameter('thresh', 65 )
 
         self.pub = self.create_publisher(OccupancyGrid, 'map_trinary', PUB_QOS)
         self.create_subscription(OccupancyGrid, 'map', self.cb, SUB_QOS)
