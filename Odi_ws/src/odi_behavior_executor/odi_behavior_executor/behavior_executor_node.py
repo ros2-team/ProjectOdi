@@ -15,6 +15,7 @@ from odi_interfaces.srv import EvaluateCuriosity
 from odi_interfaces.action import Explore
 from odi_interfaces.action import FirstEncounter
 from odi_interfaces.action import ObserveObject
+from odi_interfaces.action import ReturnHome
 
 
 
@@ -66,6 +67,15 @@ class BehaviorExecutorNode(Node):
         )
         self.first_encounter_goal_active = False
         self.first_encounter_goal_handle = None
+
+        #귀가 액션 클라이언트
+        self.return_home_action_client = ActionClient(
+            self,
+            ReturnHome,
+            "/return_home",
+        )
+        self.return_home_goal_active = False
+        self.return_home_goal_handle = None
 
         #호기심 판단 서비스 서버
         self.curiosity_client = self.create_client(
@@ -265,18 +275,23 @@ class BehaviorExecutorNode(Node):
             return
 
         # 우선순위 2 : 배터리 부족 또는 복귀 요청
-        if(self.blackboard.battery_low
-           or self.blackboard.return_requested
-           or self.blackboard.mission_state == "RETURNING"):
+        if(
+            self.blackboard.battery_low
+            or self.blackboard.return_requested
+            or self.blackboard.mission_state == "RETURNING"
+        ):
             self.set_behavior(
                 BehaviorName.RETURN_HOME,
                 BehaviorStatus.RUNNING,
                 "Returning to the home position"
             )
+            self.start_return_home()
             return
 
         # 우선순위 3 : 탐험 종료 조건
         if (self.blackboard.mission_state == "EXPLORING"
+            and not self.blackboard.return_requested
+            and not self.blackboard.return_completed
             and self.should_finish_exploration()
         ):
             self.finish_exploration()
@@ -636,7 +651,7 @@ class BehaviorExecutorNode(Node):
         self.get_logger().info(
             "\n::Exploration finish condition met::\n"
             f"motivation = {self.blackboard.motivation}\n"
-            f"observation_count = {self.blackboard.observation_count}"
+            f"observation_count = {self.blackboard.observation_count}\n"
             f"elapsed_time = {elapsed_time:.1f}s"
         )
 
@@ -1061,6 +1076,127 @@ class BehaviorExecutorNode(Node):
             ObjectProcessStage.OBSERVATION_COMPLETED
         )
 
+    def start_return_home(self) -> None:
+        if self.return_home_goal_active:
+            return
+
+        if not self.return_home_action_client.server_is_ready():
+            self.get_logger().warning(
+                "Returning home action server is not ready"
+            )
+            return
+
+        goal_msg = ReturnHome.Goal()
+
+        if self.blackboard.battery_low:
+            goal_msg.reason = "BATTERY_LOW"
+        elif self.blackboard.return_requested:
+            goal_msg.reason = "EXPLORATION_FINISHED"
+        else:
+            goal_msg.reason = "MISSION_RETURN"
+
+        self.return_home_goal_active = True
+        self.get_logger().info(
+            "\n::Return home goal requested::\n"
+            f"reason = {goal_msg.reason}"
+        )
+
+        send_goal_future = (
+            self.return_home_action_client.send_goal_async(
+                goal_msg,
+                feedback_callback=(
+                    self.return_home_feedback_callback
+                ),
+            )
+        )
+
+        send_goal_future.add_done_callback(
+            self.return_home_goal_response_callback
+        )
+
+    def return_home_goal_response_callback(
+            self,
+            future,
+    ) -> None:
+        try:
+            goal_handle = future.result()
+
+        except Exception as error:
+            self.get_logger().error(
+                f"\nFailed to send Return Home goal : {error}"
+            )
+            self.return_home_goal_active = False
+            return
+
+        if not goal_handle.accepted:
+            self.get_logger().warning(
+                "\nReturn home goal was rejected"
+            )
+            self.return_home_goal_active = False
+            return
+
+        self.return_home_goal_handle = goal_handle
+        self.get_logger().info(
+            "\nReturn Home goal was accepted"
+        )
+        result_future = (
+            goal_handle.get_result_async()
+        )
+        result_future.add_done_callback(
+            self.return_home_result_callback
+        )
+
+    def return_home_feedback_callback(
+            self,
+            feedback_msg,
+    ) -> None:
+
+        feedback = feedback_msg.feedback
+
+        self.current_detail = (
+            f"{feedback.stage} : "
+            f"{feedback.message} "
+            f"({feedback.progress * 100.0:.0f} % )"
+        )
+        self.get_logger().info(
+            "\n::Return home feedback::\n"
+            f"stage = {feedback.stage}\n"
+            f"progress = {feedback.progress:.2f}\n"
+            f"message = {feedback.message}"
+        )
+
+    def return_home_result_callback(
+            self,
+            future,
+    ) -> None:
+        self.return_home_goal_active = False
+        self.return_home_goal_handle = None
+
+        try:
+            wrapped_result = future.result()
+            result = wrapped_result.result
+        except Exception as error:
+            self.get_logger().error(
+                f"\nFailed to receive return home result : {error}"
+            )
+            return
+
+        if not result.success:
+            self.get_logger().warning(
+                "\n::Return home failed::\n"
+                f"message = {result.message}"
+            )
+            return
+
+        self.get_logger().info(
+            "\n::Return Home completed::\n"
+            f"message = {result.message}"
+        )
+
+        self.blackboard.return_requested = False
+        self.blackboard.return_completed = True
+
+
     def consume_motivation(
             self,
             amount: int,
@@ -1132,7 +1268,7 @@ def main(args=None) -> None:
         rclpy.spin(node)
     except KeyboardInterrupt:
         node.get_logger().info(
-            "Behavior Executor node is terminated"
+            "\nBehavior Executor node is terminated"
         )
     finally:
         node.destroy_node()

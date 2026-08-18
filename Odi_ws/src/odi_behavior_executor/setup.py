@@ -45,6 +45,7 @@ setup(
             "dummy_curiosity = odi_behavior_executor.dummy_curiosity:main",
             "dummy_observation = odi_behavior_executor.dummy_observation:main",
             "dummy_exploration = odi_behavior_executor.dummy_exploration:main",
+            "dummy_returnhome = odi_behavior_executor.dummy_returnhome:main",
         ],
     },
 )

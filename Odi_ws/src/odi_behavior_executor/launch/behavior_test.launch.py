@@ -32,5 +32,10 @@ def generate_launch_description():
             package = "odi_behavior_executor",
             executable = "dummy_exploration",
             output = "screen",
-        )
+        ),
+        Node(
+            package = "odi_behavior_executor",
+            executable = "dummy_returnhome",
+            output = "screen",
+        ),
     ])
