@@ -9,6 +9,7 @@ from action_msgs.msg import GoalStatus
 from odi_interfaces.msg import BehaviorState
 from odi_interfaces.msg import MissionState
 from odi_interfaces.msg import DetectedObjectArray
+from odi_interfaces.msg import BehaviorEvent
 
 from odi_interfaces.srv import EvaluateCuriosity
 
@@ -118,6 +119,12 @@ class BehaviorExecutorNode(Node):
         self.behavior_state_publisher = self.create_publisher(
             BehaviorState,
             "/behavior/state",
+            10,
+        )
+        #이벤트 결과 발행
+        self.behavior_event_publisher = self.create_publisher(
+            BehaviorEvent,
+            "/behavior/event",
             10,
         )
         #최상위 셀렉터 실행
@@ -289,10 +296,10 @@ class BehaviorExecutorNode(Node):
             return
 
         # 우선순위 3 : 탐험 종료 조건
-        if (self.blackboard.mission_state == "EXPLORING"
-            and not self.blackboard.return_requested
-            and not self.blackboard.return_completed
-            and self.should_finish_exploration()
+        if (
+            self.blackboard.mission_state == "EXPLORING"
+            and not self.blackboard.exploration_finished_requested
+            and self.should_finish_exploration
         ):
             self.finish_exploration()
             return
@@ -642,6 +649,8 @@ class BehaviorExecutorNode(Node):
 
     def finish_exploration(self) -> None:
 
+        self.blackboard.exploration_finished_requested = True
+
         started_at = self.blackboard.exploration_started_at
         elapsed_time = 0.0
         if started_at is not None:
@@ -658,7 +667,14 @@ class BehaviorExecutorNode(Node):
         if self.explore_goal_active:
             self.pause_exploration()
 
-        self.blackboard.return_requested = True
+        self.publish_behavior_event(
+            "EXPLORATION_FINSIHED",
+            (
+                f"motivation = {self.blackboard.motivation}\n"
+                f"observation_count = {self.blackboard.observation_count}"
+            ),
+        )
+
 
 
     def start_first_encounter(self) -> None:
@@ -1186,6 +1202,10 @@ class BehaviorExecutorNode(Node):
                 "\n::Return home failed::\n"
                 f"message = {result.message}"
             )
+            self.publish_behavior_event(
+                "RETURN_HOME_FAILED",
+                result.message,
+            )
             return
 
         self.get_logger().info(
@@ -1195,6 +1215,11 @@ class BehaviorExecutorNode(Node):
 
         self.blackboard.return_requested = False
         self.blackboard.return_completed = True
+
+        self.publish_behavior_event(
+            "RETURN_HOME_COMPLETED",
+            result.message,
+        )
 
 
     def consume_motivation(
@@ -1259,6 +1284,25 @@ class BehaviorExecutorNode(Node):
         msg.updated_at = self.get_clock().now().to_msg()
 
         self.behavior_state_publisher.publish(msg)
+
+    def publish_behavior_event(
+            self,
+            event: str,
+            detail: str,
+    ) -> None:
+
+        msg = BehaviorEvent()
+        msg.event = event
+        msg.detail = detail
+        msg.occurred_at = (self.get_clock().now().to_msg())
+
+        self.behavior_event_publisher.publish(msg)
+
+        self.get_logger().info(
+            "\n::Behavior event published::\n"
+            f"event = {event}\n"
+            f"detail = {detail}"
+        )
 
 def main(args=None) -> None:
     rclpy.init(args=args)

@@ -45,7 +45,7 @@ class OdiBlackboard:
     exploration_active: bool = False
     exploration_paused: bool = False
     exploration_completed: bool = False
-
+    exploration_finished_requested: bool = False
     exploration_maximum_time: float = 20.0
     exploration_started_at: float | None = None
 
@@ -80,7 +80,7 @@ class OdiBlackboard:
         self.exploration_active = False
         self.exploration_paused = False
         self.exploration_completed = False
-
+        self.exploration_finished_requested = False
         self.exploration_maximum_time = 20.0
         self.exploration_started_at = None
 
