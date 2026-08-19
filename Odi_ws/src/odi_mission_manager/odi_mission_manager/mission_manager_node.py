@@ -3,7 +3,10 @@ from enum import Enum
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
+
 from odi_interfaces.msg import MissionState
+from odi_interfaces.msg import BehaviorEvent
+
 
 class MissionStatus(str, Enum):
     "오디 최상위 미션 상태"
@@ -20,21 +23,32 @@ class MissionManagerNode(Node):
         super().__init__("mission_manager_node")
 
         self.current_state = MissionStatus.IDLE
+
         self.command_subscriber = self.create_subscription(
             String,
             "/mission/command",
             self.command_callback,
             10,
         )
+
+        self.behavior_event_subscriber = self.create_subscription(
+            BehaviorEvent,
+            "/behavior/event",
+            self.behavior_event_callback,
+            10,
+        )
+
         self.state_publisher = self.create_publisher(
             MissionState,
             "/mission/state",
             10,
         )
+
         self.state_timer = self.create_timer(
             1.0,
             self.publish_current_state,
         )
+
         # 준비 과정을 임시로 타이머로 대체를 위한 변수임
         self.preparing_timer = None
         #-----
@@ -63,6 +77,8 @@ class MissionManagerNode(Node):
                 f"{command} is unknown command"
             )
 
+
+
     def handle_start_command(self) -> None:
         if self.current_state != MissionStatus.IDLE:
             self.get_logger().warning(
@@ -71,7 +87,7 @@ class MissionManagerNode(Node):
             )
             return
 
-        self.change_state(
+        self.change_status(
             MissionStatus.PREPARING,
             "Checking systems for exploring.....",
         )
@@ -91,7 +107,7 @@ class MissionManagerNode(Node):
         if self.current_state != MissionStatus.PREPARING:
             return
 
-        self.change_state(
+        self.change_status(
             MissionStatus.EXPLORING,
             "Exploring start!",
         )
@@ -113,7 +129,7 @@ class MissionManagerNode(Node):
             self.preparing_timer = None
         # -----
 
-        self.change_state(
+        self.change_status(
             MissionStatus.RETURNING,
             "Exploring canceled preparing for return.....",
         )
@@ -126,12 +142,74 @@ class MissionManagerNode(Node):
             self.destroy_timer(self.preparing_timer)
             self.preparing_timer = None
         # -----
-        self.change_state(
+        self.change_status(
             MissionStatus.IDLE,
             "MissionStatus Resetted",
         )
 
-    def change_state(
+    def behavior_event_callback(
+            self,
+            msg: BehaviorEvent,
+    ) -> None:
+
+        event = msg.event.strip().upper()
+
+        self.get_logger().info(
+            "\n::Behavior event received::\n"
+            f"event = {event}\n"
+            f"detail = {msg.detail}"
+        )
+
+        if event == "EXPLORATION_FINISHED":
+            self.handle_exploration_finished()
+            return
+        if event == "RETURN_HOME_COMPLETED":
+            self.handle_return_home_completed()
+            return
+        if event == "RETURN_HOME_FAILED":
+            self.handle_return_home_failed(msg.detail)
+            return
+
+        self.get_logger().warning(
+            f"Unknown behavior event : {event}"
+        )
+
+    def handle_exploration_finished(self) -> None:
+        if self.current_state != MissionStatus.EXPLORING:
+            self.get_logger().warning(
+                "EXPLORATION_FINISHED event ignored\n"
+                f"Current state = {self.current_state.value}"
+            )
+            return
+        self.change_status(
+            MissionStatus.RETURNING,
+            "Exploration completed. Returning home.",
+        )
+
+    def handle_return_home_completed(self) -> None:
+        if self.current_state != MissionStatus.RETURNING:
+            self.get_logger().warning(
+                "RETURN_HOME_COMPLETED event ignored\n"
+                f"Current State = {self.current_state.value}"
+            )
+            return
+        self.change_status(
+            MissionStatus.REFLECTING,
+            "Returned home. Starting reflecting",
+        )
+
+    def handle_return_home_failed(
+            self,
+            detail: str,
+    ) -> None:
+        if self.current_state != MissionStatus.RETURNING:
+            return
+        self.change_status(
+            MissionStatus.ERROR,
+            f"Return home failed : {detail}",
+        )
+
+    def change_status(
             self,
             next_state : MissionStatus,
             detail : str,
@@ -139,10 +217,12 @@ class MissionManagerNode(Node):
 
         previous_state = self.current_state
         self.current_state = next_state
+
         self.get_logger().info(
             f"::MissionStatus updated::\n"
             f"{previous_state.value} -> {next_state.value}"
         )
+        self.publish_state(detail)
 
     def publish_current_state(self) -> None:
         self.publish_state(
