@@ -4,11 +4,6 @@ from launch_ros.actions import Node
 def generate_launch_description():
     return LaunchDescription([
         Node(
-            package = "odi_mission_manager",
-            executable = "mission_manager",
-            output = "screen",
-        ),
-        Node(
             package = "odi_behavior_executor",
             executable = "behavior_executor",
             output = "screen",

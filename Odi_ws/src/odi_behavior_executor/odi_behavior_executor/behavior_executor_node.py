@@ -299,7 +299,7 @@ class BehaviorExecutorNode(Node):
         if (
             self.blackboard.mission_state == "EXPLORING"
             and not self.blackboard.exploration_finished_requested
-            and self.should_finish_exploration
+            and self.should_finish_exploration()
         ):
             self.finish_exploration()
             return
@@ -325,11 +325,15 @@ class BehaviorExecutorNode(Node):
 
         #탐험
         if self.blackboard.mission_state == "EXPLORING":
+            if self.blackboard.exploration_finished_requested:
+                return
+
             self.set_behavior(
                 BehaviorName.EXPLORE,
                 BehaviorStatus.RUNNING,
                 "Exploring an unknown area"
             )
+
             self.start_exploration()
             return
 
@@ -668,7 +672,7 @@ class BehaviorExecutorNode(Node):
             self.pause_exploration()
 
         self.publish_behavior_event(
-            "EXPLORATION_FINSIHED",
+            "EXPLORATION_FINISHED",
             (
                 f"motivation = {self.blackboard.motivation}\n"
                 f"observation_count = {self.blackboard.observation_count}"
