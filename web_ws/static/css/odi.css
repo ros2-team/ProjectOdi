@@ -1,0 +1,137 @@
+/* ============================================================
+   Odi — 디자인 토큰 + 공통 컴포넌트
+
+   탐험은 어둡고 일기는 밝다. body[data-tone] 으로 갈리지만
+   토큰은 같으므로 파일을 나누지 않는다.
+   문서의 탐험 → 복귀 → 회고 흐름이 화면 색으로 드러나는 구조.
+   ============================================================ */
+
+:root{
+  /* 어두운 쪽 — 밖에 나가 있을 때 */
+  --ink:#0E1A20; --ink-raised:#16262E; --ink-line:#223A45;
+  --on-ink:#E9EFEC; --on-ink-dim:#8DA49F; --on-ink-faint:#5A7078;
+
+  /* 밝은 쪽 — 집에 돌아와 일기를 쓸 때 */
+  --paper:#F4F3EF; --paper-raised:#FBFAF7; --paper-line:#DEDBD2;
+  --on-paper:#22201C; --on-paper-dim:#6E6A61;
+
+  /* 호기심은 어둠 속의 따뜻한 불빛 */
+  --lamp:#F0A649; --lamp-deep:#B4741F;
+  --calm:#5DCAA5; --warn:#E24B4A;
+
+  --ui:"IBM Plex Sans KR",system-ui,sans-serif;
+  --data:"IBM Plex Mono",monospace;
+  --voice:"Gowun Batang",serif;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{font-family:var(--ui);font-weight:400;min-height:100vh;
+     transition:background-color .8s ease,color .8s ease}
+body[data-tone="dark"]{background:var(--ink);color:var(--on-ink)}
+body[data-tone="light"]{background:var(--paper);color:var(--on-paper)}
+
+.wrap{max-width:960px;margin:0 auto;padding:28px 20px 40px}
+.mono{font-family:var(--data);font-variant-numeric:tabular-nums}
+[hidden]{display:none!important}
+
+button{font-family:inherit;font-size:inherit;cursor:pointer;border:none;background:none;color:inherit}
+button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--lamp);outline-offset:3px}
+
+/* ── 연결 상태 ────────────────────────────────────────
+   화면이 멈춘 건지 로봇이 멈춘 건지 구분되어야 한다.
+   발표 중에 이게 없으면 제일 곤란하다. */
+.offline{
+  display:flex;align-items:center;gap:9px;
+  background:rgba(226,75,74,.11);border:1px solid rgba(226,75,74,.3);
+  color:#F09595;border-radius:8px;padding:11px 15px;font-size:13px;margin-bottom:18px;
+}
+.offline b{font-weight:400;font-family:var(--data);font-size:11.5px;opacity:.7;margin-left:auto}
+
+/* ── 상단 상태 ────────────────────────────────────────── */
+.status{border-bottom:1px solid var(--ink-line);padding-bottom:20px;margin-bottom:22px}
+.eyebrow{display:flex;align-items:center;gap:9px;font-size:11px;letter-spacing:.12em;
+         color:var(--on-ink-faint);margin-bottom:9px}
+.eyebrow em{font-style:normal;padding:2px 8px;border-radius:3px;
+            background:rgba(240,166,73,.13);color:var(--lamp);letter-spacing:.08em}
+.line{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap}
+.line h2{font-family:var(--voice);font-size:25px;font-weight:400;line-height:1.35}
+.clock{font-size:25px;color:var(--on-ink-dim)}
+
+/* ── 의욕 게이지 ──────────────────────────────────────
+   사용자가 개입할 수 없는 화면이라, "왜 아직 안 끝나지"에
+   답해줄 게 이것뿐이다. 행동할 때 뭉텅 깎이며 한 번 깜빡인다. */
+.gauge{margin-top:20px}
+.gauge .track{height:4px;background:var(--ink-line);border-radius:2px;overflow:hidden}
+.gauge .fill{height:100%;background:var(--lamp);width:100%;transition:width .9s ease}
+.gauge .fill.drop{animation:flash .85s ease}
+@keyframes flash{0%{opacity:1}35%{opacity:.35}100%{opacity:1}}
+.gauge .labels{display:flex;justify-content:space-between;align-items:baseline;
+               font-size:11px;letter-spacing:.06em;color:var(--on-ink-faint);margin-top:9px}
+.gauge .labels b{font-weight:400;font-family:var(--data);color:var(--on-ink-dim);transition:color .3s}
+.gauge .labels b.spent{color:var(--lamp)}
+
+/* ── 2단 레이아웃 ─────────────────────────────────────── */
+.cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:20px}
+@media (max-width:720px){.cols{grid-template-columns:minmax(0,1fr)}}
+
+/* ── 사진 / 카메라 ────────────────────────────────────── */
+.photo{position:relative;border-radius:10px;overflow:hidden;background:var(--ink-raised);
+       display:flex;align-items:center;justify-content:center;
+       font-size:12px;letter-spacing:.06em;color:var(--on-ink-faint)}
+.photo img{width:100%;height:100%;object-fit:cover;display:block}
+.cam{margin-bottom:14px}
+.cam .photo{aspect-ratio:4/3}
+.cam .cap{display:flex;justify-content:space-between;font-size:11.5px;
+          color:var(--on-ink-faint);margin-top:9px;font-family:var(--data)}
+
+/* ── 지도 ─────────────────────────────────────────────
+   <img> 위에 SVG 오버레이. 좌표 변환은 브리지가 해서
+   픽셀 좌표로 내려준다. 프론트는 점만 찍는다. */
+.mapbox{border:1px solid var(--ink-line);border-radius:10px;overflow:hidden;
+        background:var(--ink-raised);position:relative}
+.mapbox img{display:block;width:100%;image-rendering:pixelated}
+.mapbox svg{display:block;width:100%;height:auto}
+.mapbox .layer{position:absolute;inset:0;width:100%;height:100%}
+.mapbox .wait{padding:52px 0;text-align:center;font-size:12px;color:var(--on-ink-faint)}
+
+/* ── 발견 피드 ────────────────────────────────────────
+   이 화면의 시그니처. OBSERVE는 밝고 IGNORE는 흐리다.
+   시각적 무게 차이 자체가 호기심 판단을 보여준다.
+   지나친 걸 지우면 "골라서 봤다"가 화면에서 사라진다. */
+.feed h3{font-size:11px;letter-spacing:.12em;color:var(--on-ink-faint);
+         margin-bottom:14px;font-weight:400}
+.queue{font-family:var(--data);font-size:11px;color:var(--on-ink-faint);
+       padding:11px 0 15px 16px;border-left:1px solid var(--ink-line)}
+
+@keyframes slide{from{opacity:0;transform:translateY(-7px)}to{opacity:1;transform:none}}
+.fresh{animation:slide .45s ease both}
+
+.entry{padding:12px 0 12px 16px;border-left:1px solid var(--ink-line);position:relative}
+.entry::before{content:"";position:absolute;left:-3.5px;top:18px;width:6px;height:6px;
+               border-radius:50%;background:var(--ink-line)}
+.entry .name{font-family:var(--data);font-size:13.5px;letter-spacing:.02em;margin-bottom:4px}
+.entry .said{font-family:var(--voice);font-size:14px;line-height:1.65;margin-bottom:8px}
+.entry .photo{width:112px;aspect-ratio:4/3;border-radius:5px;font-size:10px;margin-bottom:9px}
+.entry .meta{font-size:10.5px;color:var(--on-ink-faint);font-family:var(--data);margin-top:7px}
+
+.entry.observe{border-left-color:rgba(240,166,73,.45)}
+.entry.observe::before{background:var(--lamp)}
+.entry.done{border-left-color:rgba(93,202,165,.4)}
+.entry.done::before{background:var(--calm)}
+.entry.done .said{margin-bottom:6px}
+.entry.ignore{opacity:.42;padding-top:8px;padding-bottom:8px}
+.entry.ignore .said{font-size:12.5px;margin-bottom:0}
+.entry.ignore .name{font-size:12px;color:var(--on-ink-dim)}
+
+.tag{display:inline-block;font-size:10.5px;letter-spacing:.06em;padding:3px 9px;border-radius:3px}
+.tag.observe{background:rgba(240,166,73,.14);color:var(--lamp)}
+.tag.done{background:rgba(93,202,165,.13);color:var(--calm)}
+
+.more{font-size:11px;color:var(--on-ink-faint);font-family:var(--data);
+      padding:12px 0 0 16px;border-left:1px solid var(--ink-line)}
+.empty{font-size:13.5px;color:var(--on-ink-faint);line-height:1.8}
+
+/* 일기 화면 스타일은 여기 아래에 붙인다 (diary.html 만들 때) */
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}

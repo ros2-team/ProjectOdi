@@ -1,3 +1,9 @@
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+*.log
+static/media/
 
 # ROS2 build output
 Odi_ws/build/

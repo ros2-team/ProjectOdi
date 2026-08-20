@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odi · 탐험 중</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/odi.css">
+</head>
+<body data-tone="dark">
+
+<div class="wrap">
+
+  <div class="offline" id="offline" hidden>
+    <span id="offlineMsg"></span>
+    <b id="offlineAge"></b>
+  </div>
+
+  <div class="status">
+    <div class="eyebrow"><span id="phase">탐험 중</span><em id="mode">FRONTIER</em></div>
+    <div class="line">
+      <h2 id="head">준비하고 있어요</h2>
+      <span class="clock mono" id="clock">00:00</span>
+    </div>
+    <div class="gauge">
+      <div class="track"><div class="fill" id="fill"></div></div>
+      <div class="labels">
+        <span>Odi의 의욕</span>
+        <b id="drive">100%</b>
+      </div>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div>
+      <div class="cam">
+        <div class="photo" id="cam">Odi가 보는 화면</div>
+        <div class="cap"><span>방금 촬영</span><span id="shotAt">—</span></div>
+      </div>
+      <div class="mapbox" id="mapbox"></div>
+    </div>
+
+    <div class="feed">
+      <h3>오늘의 발견</h3>
+      <div class="queue" id="queue" hidden></div>
+      <div id="feed"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- schema.js 가 먼저. exploring.js 가 describe() / why() / SAY 를 쓴다. -->
+<script src="/js/schema.js"></script>
+<script src="/js/exploring.js"></script>
+</body>
+</html>
