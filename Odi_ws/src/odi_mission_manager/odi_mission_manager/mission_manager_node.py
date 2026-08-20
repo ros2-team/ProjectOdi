@@ -169,6 +169,12 @@ class MissionManagerNode(Node):
         if event == "RETURN_HOME_FAILED":
             self.handle_return_home_failed(msg.detail)
             return
+        if event == "REFLECTION_COMPLETED":
+            self.handle_reflection_completed()
+            return
+        if event == "REFLECTION_FAILED":
+            self.handle_reflection_failed(msg.detail)
+            return
 
         self.get_logger().warning(
             f"Unknown behavior event : {event}"
@@ -189,13 +195,24 @@ class MissionManagerNode(Node):
     def handle_return_home_completed(self) -> None:
         if self.current_state != MissionStatus.RETURNING:
             self.get_logger().warning(
-                "RETURN_HOME_COMPLETED event ignored\n"
+                "\nRETURN_HOME_COMPLETED event ignored\n"
                 f"Current State = {self.current_state.value}"
             )
             return
         self.change_status(
             MissionStatus.REFLECTING,
             "Returned home. Starting reflecting",
+        )
+    def handle_reflection_completed(self) -> None:
+        if self.current_state != MissionStatus.REFLECTING:
+            self.get_logger().warning(
+                "\nREFLECTION_COMPLETED event ignored\n"
+                f"Current State = {self.current_state.value}"
+            )
+            return
+        self.change_status(
+            MissionStatus.COMPLETED,
+            "Exploration diary completed",
         )
 
     def handle_return_home_failed(
@@ -209,6 +226,17 @@ class MissionManagerNode(Node):
             f"Return home failed : {detail}",
         )
 
+    def handle_reflection_failed(
+            self,
+            detail: str,
+    ) -> None:
+        if self.current_state != MissionStatus.REFLECTING:
+            return
+        self.change_status(
+            MissionStatus.ERROR,
+            f"Reflection failed : {detail}",
+        )
+
     def change_status(
             self,
             next_state : MissionStatus,
@@ -219,7 +247,7 @@ class MissionManagerNode(Node):
         self.current_state = next_state
 
         self.get_logger().info(
-            f"::MissionStatus updated::\n"
+            f"\n::MissionStatus updated::\n"
             f"{previous_state.value} -> {next_state.value}"
         )
         self.publish_state(detail)
