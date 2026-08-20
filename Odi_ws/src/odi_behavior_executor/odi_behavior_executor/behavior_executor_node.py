@@ -17,6 +17,7 @@ from odi_interfaces.action import Explore
 from odi_interfaces.action import FirstEncounter
 from odi_interfaces.action import ObserveObject
 from odi_interfaces.action import ReturnHome
+from odi_interfaces.action import Reflect
 
 
 
@@ -98,6 +99,15 @@ class BehaviorExecutorNode(Node):
         self.current_behavior = BehaviorName.NONE
         self.current_status = BehaviorStatus.IDLE
         self.current_detail = "Waiting for mission"
+
+        #반영 액션 클라이언트
+        self.reflect_action_client = ActionClient(
+            self,
+            Reflect,
+            "/reflect",
+        )
+        self.reflect_goal_active = False
+        self.reflect_goal_handle = None
 
         # mission manager의 미션 상태 구독
         self.mission_state_subscriber = self.create_subscription(
@@ -344,6 +354,7 @@ class BehaviorExecutorNode(Node):
                 BehaviorStatus.RUNNING,
                 "Generating an exploration diary",
             )
+            self.start_reflection()
             return
 
         #미션 완료
@@ -1222,6 +1233,140 @@ class BehaviorExecutorNode(Node):
 
         self.publish_behavior_event(
             "RETURN_HOME_COMPLETED",
+            result.message,
+        )
+    def start_reflection(self) -> None:
+        if self.reflect_goal_active:
+            return
+
+        if not self.reflect_action_client.server_is_ready():
+            self.get_logger().warning(
+                "Reflect action server is not ready"
+            )
+            return
+
+        goal_msg = Reflect.Goal()
+        goal_msg.session_id = "odi_exploration"
+
+        self.reflect_goal_active = True
+        self.blackboard.reflection_active = True
+
+        self.get_logger().info(
+            "\n::Reflect goal requested::\n"
+            f"session_id = {goal_msg.session_id}"
+        )
+
+        send_goal_future = (
+            self.reflect_action_client.send_goal_async(
+                goal_msg,
+                feedback_callback = (
+                    self.reflect_feedback_callback
+                ),
+            )
+        )
+
+        send_goal_future.add_done_callback(
+            self.reflect_goal_response_callback
+        )
+
+    def reflect_goal_response_callback(
+            self,
+            future,
+    ) -> None:
+        try:
+            goal_handle = future.result()
+        except Exception as error:
+            self.get_logger().error(
+                f"Failed to send Reflect goal : {error}"
+            )
+            self.reflect_goal_active = False
+            self.blackboard.reflection_active = False
+            return
+
+        if not goal_handle.accepted:
+            self.get_logger().warning(
+                "Reflect goal was rejected"
+            )
+
+            self.reflect_goal_active = False
+            self.blackboard.reflection_active = False
+            return
+
+        self.reflect_goal_handle = goal_handle
+
+        self.get_logger().info(
+            "Reflect goal was accepted"
+        )
+
+        result_future = (
+            goal_handle.get_result_async()
+        )
+
+        result_future.add_done_callback(
+            self.reflect_result_callback
+        )
+
+    def reflect_feedback_callback(
+            self,
+            feedback_msg,
+    ) -> None:
+
+        feedback = feedback_msg.feedback
+
+        self.current_datail = (
+            f"\n{feedback.stage} : {feedback.message}"
+            f"({feedback.progress*100.0:.0f}%)"
+        )
+        self.get_logger().info(
+            "\n::Reflect feedback::\n"
+            f"stage = {feedback.stage}\n"
+            f"progress = {feedback.progress:.2f}\n"
+            f"message = {feedback.message}"
+        )
+
+    def reflect_result_callback(
+            self,
+            future,
+    ) -> None:
+
+        self.reflect_goal_active = False
+        self.reflect_goal_handle = None
+        self.blackboard.reflection_active = False
+
+        try:
+            wrapped_result = future.result()
+            result = wrapped_result.result
+        except Exception as error:
+            self.get_logger().error(
+                f"Failed to receive Reflect result : {error}"
+            )
+            self.publish_behavior_event(
+                "REFLECTION_FAILED",
+                str(error),
+            )
+            return
+        if not result.success:
+            self.get_logger().warning(
+                "\n::Reflection failed::\n"
+                f"message = {result.message}"
+            )
+            self.publish_behavior_event(
+                "REFLECTION_FAILED",
+                result.message,
+            )
+            return
+
+        self.get_logger().info(
+            "\n::Reflection completed::\n"
+            f"diary_id = {result.diary_id}\n"
+            f"diary_text = {result.diary_text}\n"
+            f"message = {result.message}"
+        )
+
+        self.blackboard.reflection_completed = True
+
+        self.publish_behavior_event(
+            "REFLECTION_COMPLETED",
             result.message,
         )
 
