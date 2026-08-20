@@ -4,6 +4,9 @@ import time
 
 import rclpy
 from rclpy.action import ActionServer
+from rclpy.action import CancelResponse
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from odi_interfaces.action import ObserveObject
@@ -23,9 +26,29 @@ class MockObservationServer(Node):
             self.execute_callback,
         )
 
+        self.callback_group = ReentrantCallbackGroup()
+
+        self.action_server = ActionServer(
+            self,
+            ObserveObject,
+            "/observe_object",
+            execute_callback = self.execute_callback,
+            cancel_callback = self.cancel_callback,
+            callback_group = self.callback_group,
+        )
+
         self.get_logger().info(
             "Mock Observation Server is Running"
         )
+
+    def cancel_callback(
+            self,
+            cancel_request,
+    ):
+        self.get_logger().info(
+            "Observation cancel reqeuest received"
+        )
+        return CancelResponse.ACCEPT
 
     def execute_callback(
         self,
@@ -80,6 +103,21 @@ class MockObservationServer(Node):
         ]
 
         for stage, progress, message in stages:
+            if goal_handle.is_cancel_requested:
+                self.get_logger().info(
+                    "Observation canceled"
+                )
+                goal_handle.canceled()
+
+                result = ObserveObject.Result()
+                result.result.success = False
+                result.result.detection_id = (
+                    goal_handle.request.encounter.detection_id
+                )
+                result.result.failure_reason = (
+                    "Canceled by Behavior executor"
+                )
+                return result
             feedback.stage = stage
             feedback.progress = progress
             feedback.message = message
@@ -159,6 +197,9 @@ def main(args=None) -> None:
 
     node = MockObservationServer()
 
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+
     try:
         rclpy.spin(node)
 
@@ -166,6 +207,7 @@ def main(args=None) -> None:
         pass
 
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 

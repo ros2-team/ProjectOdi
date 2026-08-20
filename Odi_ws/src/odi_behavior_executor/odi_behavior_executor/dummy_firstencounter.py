@@ -4,6 +4,9 @@ import time
 
 import rclpy
 from rclpy.action import ActionServer
+from rclpy.action import CancelResponse
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from odi_interfaces.action import FirstEncounter
@@ -24,14 +27,36 @@ class MockFirstEncounterServer(Node):
             self.execute_callback,
         )
 
+        self.callback_group = ReentrantCallbackGroup()
+
+        self.action_server = ActionServer(
+            self,
+            FirstEncounter,
+            "/first_encounter",
+            execute_callback = self.execute_callback,
+            cancel_callback = self.cancel_callback,
+            callback_group = self.callback_group,
+        )
+
         self.get_logger().info(
             "Mock First Encounter Server is Running."
         )
+
+    def cancel_callback(
+            self,
+            cancel_request,
+    ):
+        self.get_logger().info(
+            "First encounter cancel request received"
+        )
+
+        return CancelResponse.ACCEPT
 
     def execute_callback(
         self,
         goal_handle,
     ) -> FirstEncounter.Result:
+
         target = goal_handle.request.target
 
         self.get_logger().info(
@@ -71,6 +96,15 @@ class MockFirstEncounterServer(Node):
         ]
 
         for stage, progress, message in stages:
+            if goal_handle.is_cancel_requested:
+                goal_handle.canceled()
+
+                result = FirstEncounter.Result()
+                result.result.success = False
+                result.result.detection_id = goal_handle.request.target.detection_id
+                result.result.failure_reason = "Canceled by Behavior executor"
+                return result
+
             feedback.stage = stage
             feedback.progress = progress
             feedback.message = message
@@ -118,13 +152,17 @@ def main(args=None) -> None:
 
     node = MockFirstEncounterServer()
 
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+
     try:
-        rclpy.spin(node)
+        executor.spin()
 
     except KeyboardInterrupt:
         pass
 
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 

@@ -10,7 +10,7 @@ def generate_launch_description():
         ),
         Node(
             package = "odi_behavior_executor",
-            executable = "dummy_perception",
+            executable = "dummy_firstencounter",
             output = "screen",
         ),
         Node(

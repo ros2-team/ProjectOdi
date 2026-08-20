@@ -41,7 +41,7 @@ setup(
     entry_points={
         'console_scripts': [
             "behavior_executor = odi_behavior_executor.behavior_executor_node:main",
-            "dummy_perception = odi_behavior_executor.dummy_perception:main",
+            "dummy_firstencounter = odi_behavior_executor.dummy_firstencounter:main",
             "dummy_curiosity = odi_behavior_executor.dummy_curiosity:main",
             "dummy_observation = odi_behavior_executor.dummy_observation:main",
             "dummy_exploration = odi_behavior_executor.dummy_exploration:main",

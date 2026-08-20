@@ -78,6 +78,8 @@ class BehaviorExecutorNode(Node):
         )
         self.return_home_goal_active = False
         self.return_home_goal_handle = None
+        self.return_prepared = False
+
 
         #호기심 판단 서비스 서버
         self.curiosity_client = self.create_client(
@@ -167,6 +169,7 @@ class BehaviorExecutorNode(Node):
         if msg.state == "IDLE":
             self.blackboard.reset()
             self.explore_mode = "FRONTIER"
+            self.return_prepared = False
 
     def detected_objects_callback(
             self,
@@ -297,11 +300,16 @@ class BehaviorExecutorNode(Node):
             or self.blackboard.return_requested
             or self.blackboard.mission_state == "RETURNING"
         ):
+            if not self.return_prepared:
+                self.prepare_for_return()
+                return
+
             self.set_behavior(
                 BehaviorName.RETURN_HOME,
                 BehaviorStatus.RUNNING,
                 "Returning to the home position"
             )
+
             self.start_return_home()
             return
 
@@ -793,9 +801,20 @@ class BehaviorExecutorNode(Node):
         # First Encounter의 최종 결과를  처리한다.
         self.first_encounter_goal_active = False
         self.first_encounter_goal_handle = None
+
         try:
             wrapped_result = future.result()
+
+            if wrapped_result.status == GoalStatus.STATUS_CANCELED:
+                self.get_logger().info(
+                    "\n First encounter canceled"
+                )
+                self.first_encounter_goal_active = False
+                self.first_encounter_goal_handle = None
+                return
+
             encounter_result = wrapped_result.result.result
+
         except Exception as error:
             self.get_logger().error(
                 f"Failed to receive first encounter result : {error}"
@@ -831,6 +850,46 @@ class BehaviorExecutorNode(Node):
 
         self.blackboard.current_stage = (
             ObjectProcessStage.ENCOUNTER_COMPLETED
+        )
+
+    def cancel_first_encounter(self) -> None:
+        if not self.first_encounter_goal_active:
+            return
+
+        if self.first_encounter_goal_handle is None:
+            return
+
+        self.get_logger().info(
+            "First Encounter cancel requested"
+        )
+
+        cancel_future = (
+            self.first_encounter_goal_handle.cancel_goal_async()
+        )
+        cancel_future.add_done_callback(
+            self.first_encounter_cancel_callback
+        )
+
+    def first_encounter_cancel_callback(
+            self,
+            future,
+    ) -> None:
+
+        try:
+            response = future.result()
+        except Exception as error:
+            self.get_logger().error(
+                f"\nFailed to cancel First encounter : {error}"
+            )
+            return
+
+        if not response.goals_canceling:
+            self.get_logger().warning(
+                "\nFirst encounter cancel was rejected"
+            )
+            return
+        self.get_logger().info(
+            "\nFirst encounter cancel was accepted"
         )
 
     def start_curiosity_evaluation(self) -> None:
@@ -1066,9 +1125,17 @@ class BehaviorExecutorNode(Node):
 
         try:
             wrapped_result = future.result()
-            observation_result = (
-                wrapped_result.result.result
-            )
+
+            if wrapped_result.status == GoalStatus.STATUS_CANCELED:
+                self.get_logger().info(
+                    "\nObservation canceled"
+                )
+                self.observe_object_goal_active = False
+                self.observe_object_goal_handle = None
+                return
+
+            observation_result = wrapped_result.result.result
+
         except Exception as error:
             self.get_logger().error(
                 f"Failed to receive observation result : {error}"
@@ -1106,6 +1173,47 @@ class BehaviorExecutorNode(Node):
         self.blackboard.current_stage = (
             ObjectProcessStage.OBSERVATION_COMPLETED
         )
+
+    def cancel_observation(self) -> None:
+        if not self.observe_object_goal_active:
+            return
+        if self.observe_object_goal_handle is None:
+            return
+        self.get_logger().info(
+            "\nObservation cancel requested"
+        )
+
+        cancel_future = (
+            self.observe_object_goal_handle.cancel_goal_async()
+        )
+        cancel_future.add_done_callback(
+            self.observation_cancel_callback
+        )
+
+    def observation_cancel_callback(
+            self,
+            future,
+    ) -> None:
+
+        try:
+            response = future.result()
+
+        except Exception as error:
+            self.get_logger().error(
+                f"\nFailed to cancel observation : {error}"
+            )
+            return
+
+        if not response.goals_canceling:
+            self.get_logger().warning(
+                "\nObservation cancel was rejected"
+            )
+            return
+
+        self.get_logger().info(
+            "\nObservation cancel was accepted"
+        )
+
 
     def start_return_home(self) -> None:
         if self.return_home_goal_active:
@@ -1235,6 +1343,51 @@ class BehaviorExecutorNode(Node):
             "RETURN_HOME_COMPLETED",
             result.message,
         )
+
+    def prepare_for_return(self) -> None:
+        self.get_logger().info(
+            "\n::Preparing for return::\n"
+        )
+        self.blackboard.detection_locked = True
+        self.blackboard.exploration_paused = True
+
+        self.blackboard.pending_objects.clear()
+
+        if self.explore_goal_active:
+            self.pause_exploration()
+
+        if self.first_encounter_goal_active:
+            self.cancel_first_encounter()
+
+        if self.observe_object_goal_active:
+            self.cancel_observation()
+
+        if(
+            self.explore_goal_active
+            or self.first_encounter_goal_active
+            or self.observe_object_goal_active
+        ):
+            self.get_logger().info(
+                "Waiting for active behaviors to stop..."
+            )
+            return
+
+        self.blackboard.current_object = None
+        self.blackboard.current_stage = (
+            ObjectProcessStage.NONE
+        )
+
+        self.blackboard.encounter_result = None
+        self.blackboard.curiosity_decision = None
+        self.blackboard.observation_result = None
+
+        self.return_prepared = True
+
+        self.get_logger().info(
+            "Return preparation completed"
+        )
+
+
     def start_reflection(self) -> None:
         if self.reflect_goal_active:
             return
