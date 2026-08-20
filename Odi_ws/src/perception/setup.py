@@ -27,6 +27,8 @@ setup(
             'vlm_node = perception.vlm_node:main',
             'yolo_test_node = perception.yolo_test:main',
             'map_trinary_node = perception.map_trinary:main',
+            'object_locater_node = perception.object_locater:main',
+            'bearing_probe_node = perception.bearing_probe:main',
         ],
     },
 )

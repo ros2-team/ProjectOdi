@@ -5,6 +5,7 @@ from std_msgs.msg import Bool
 from cv_bridge import CvBridge
 import cv2
 from ultralytics import YOLO
+from odi_interfaces.msg import DetectedObject 
 
 class YoloTestNode(Node):
     def __init__(self):
@@ -12,7 +13,8 @@ class YoloTestNode(Node):
         self.bridge = CvBridge()
         # CPU 쌩쌩하게 돌기 위해 Nano 모델 필수
         self.model = YOLO('yolov8n.pt') 
-        
+
+        ######################################################### publish ###########################################################
         # 1. 기존 RQT 확인용 퍼블리셔 (박스 쳐진 화면, 10 FPS)
         self.image_pub = self.create_publisher(CompressedImage, '/yolo/image/compressed', 1)
         
@@ -21,7 +23,11 @@ class YoloTestNode(Node):
 
         # 3. 객체 인식이 되면 자동 탐사 패키지에 상태 값 publish -> 자동 탐사 정지 / 재개 기능
         self.explore_pub = self.create_publisher(Bool, "explore/resume", 10)
-        
+
+        # 4. bbox의 xy 데이터 인지 최상단 영역에 보내기
+        self.bbox_pub = self.create_publisher(DetectedObject, "/yolo/detection", 10)
+
+        ########################################################### subscriber ################################################################
         # 라즈베리파이 카메라 구독
         self.image_sub = self.create_subscription(CompressedImage, '/camera/image_raw/compressed', self.image_callback, 1)
         
@@ -45,7 +51,7 @@ class YoloTestNode(Node):
         # 압축 풀기
         frame = self.bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
         # YOLO 추론
-        results = self.model(frame, conf=0.5, verbose=False, device='cpu', imgsz = 480)
+        results = self.model(frame, conf=0.3, verbose=False, device='cpu')
         # 객체 인식 여부 확인 (사람(class 0)이 1명이라도 있는지)
         object_detected = len(results[0].boxes) > 0
 
@@ -64,43 +70,66 @@ class YoloTestNode(Node):
             cx = int((x1 + x2) / 2)
             cy = int((y1 + y2) / 2)
 
-            cv2.circle(annotated_frame, (cx, cy), 5, (0, 0, 255), -1)
+            # Bounding Box 폭
+            width = x2 - x1
 
+            # YOLO 정보
+            class_id = int(box.cls[0])
+            class_name = self.model.names[class_id]
+            confidence = float(box.conf[0])
+
+            # ==========================================
+            # Custom Message 생성
+            # ==========================================
+            detection_msg = DetectedObject()
+
+            detection_msg.detection_id = str(class_id)
+            detection_msg.class_name = class_name
+            detection_msg.confidence = confidence
+            detection_msg.center_x = cx
+            detection_msg.width = width
+
+            # 퍼블리시
+            self.bbox_pub.publish(detection_msg)
+
+            # 바운딩 박스 치기 
+            cv2.circle(annotated_frame, (cx, cy), 5, (0, 0, 255), -1)
+            print('bbox u_left=%.0f u_right=%.0f u_center=%.0f' % (x1, x2, (x1+x2)/2))
             xyxy = [x1, x2, y1, y2]
 
         self.image_pub.publish(self.bridge.cv2_to_compressed_imgmsg(annotated_frame, dst_format="jpg"))
         
-        # [핵심 로직] 상태 머신 (VLA 트리거 제어)
-        if object_detected:
-            self.lost_count = 0  # 객체가 시야에 있으니 상실 카운터 초기화
+        # # [핵심 로직] 상태 머신 (VLA 트리거 제어)
+        # if object_detected:
+        #     self.lost_count = 0  # 객체가 시야에 있으니 상실 카운터 초기화
             
-            # 자물쇠가 풀려있다면 (이번 타임에 처음 발견한 거라면!)
-            if not self.is_vla_triggered:
-                self.get_logger().info('🔥 목표물 최초 인식! VLA(Gemini) 노드로 사진 1장을 전송합니다.')
+        #     # 자물쇠가 풀려있다면 (이번 타임에 처음 발견한 거라면!)
+        #     if not self.is_vla_triggered:
+        #         self.get_logger().info('🔥 목표물 최초 인식! VLA(Gemini) 노드로 사진 1장을 전송합니다.')
                 
-                # 주의: VLA 모델에게는 바운딩 박스가 그려진 사진보다 '원본(frame)'을 보내는 게 환각(Hallucination) 방지와 텍스트 묘사에 훨씬 유리.
+        #         # 주의: VLA 모델에게는 바운딩 박스가 그려진 사진보다 '원본(frame)'을 보내는 게 환각(Hallucination) 방지와 텍스트 묘사에 훨씬 유리.
 
-                # 함수 호출
-                self.crop_vlm_pub(frame, xyxy)
+        #         # 함수 호출
+        #         self.crop_vlm_pub(frame, xyxy)
 
-                # 자동 탐사 상태 주머니 만들기
-                msg = Bool()
-                Bool.data = False
-                self.explore_pub.publish(msg)
+        #         # 자동 탐사 상태 주머니 만들기
+        #         msg = Bool()
+        #         Bool.data = False
+        #         self.explore_pub.publish(msg)
 
-                # 사진을 쐈으니 자물쇠를 잠금 (다시 안 쏘도록)
-                self.is_vla_triggered = True 
-            else:
-                pass
+        #         # 사진을 쐈으니 자물쇠를 잠금 (다시 안 쏘도록)
+        #         self.is_vla_triggered = True 
+        #     else:
+        #         pass
 
-        else:
-            self.lost_count += 1
+        # else:
+        #     self.lost_count += 1
             
-            # 객체가 시야에서 사라지고 30프레임(약 3초)이 지났다면?
-            # -> 완전히 지나갔다고 판단하고, 다음 인식을 위해 자물쇠를 풂
-            if self.is_vla_triggered and self.lost_count > 30:
-                self.get_logger().info('🔄 목표물 상실 3초 경과. VLA 트리거 상태를 리셋(대기)합니다.')
-                # self.is_vla_triggered = False
+        #     # 객체가 시야에서 사라지고 30프레임(약 3초)이 지났다면?
+        #     # -> 완전히 지나갔다고 판단하고, 다음 인식을 위해 자물쇠를 풂
+        #     if self.is_vla_triggered and self.lost_count > 30:
+        #         self.get_logger().info('🔄 목표물 상실 3초 경과. VLA 트리거 상태를 리셋(대기)합니다.')
+        #         # self.is_vla_triggered = False
 
         # 욜로 이미지 크롭 후 pub
     def crop_vlm_pub(self, data, xyxy):
