@@ -30,6 +30,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/Explore.action"
   "action/FirstEncounter.action"
   "action/ReturnHome.action"
+  "action/Reflect.action"
 
   DEPENDENCIES
   std_msgs
