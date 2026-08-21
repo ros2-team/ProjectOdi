@@ -19,13 +19,6 @@ class MockObservationServer(Node):
     def __init__(self) -> None:
         super().__init__("mock_observation_server")
 
-        self.action_server = ActionServer(
-            self,
-            ObserveObject,
-            "/observe_object",
-            self.execute_callback,
-        )
-
         self.callback_group = ReentrantCallbackGroup()
 
         self.action_server = ActionServer(
@@ -38,7 +31,7 @@ class MockObservationServer(Node):
         )
 
         self.get_logger().info(
-            "Mock Observation Server is Running"
+            "\nMock Observation Server is Running"
         )
 
     def cancel_callback(
@@ -46,7 +39,7 @@ class MockObservationServer(Node):
             cancel_request,
     ):
         self.get_logger().info(
-            "Observation cancel reqeuest received"
+            "\nObservation cancel request received"
         )
         return CancelResponse.ACCEPT
 
@@ -126,6 +119,22 @@ class MockObservationServer(Node):
 
             time.sleep(0.7)
 
+        if goal_handle.is_cancel_requested:
+            self.get_logger().info(
+                "Observation canceled"
+            )
+            goal_handle.canceled()
+
+            result = ObserveObject.Result()
+            result.result.success = False
+            result.result.detection_id = (
+                goal_handle.request.encounter.detection_id
+            )
+            result.result.failure_reason = (
+                "Canceled by behavior Executor"
+            )
+            return result
+
         detailed_label = SemanticLabel()
 
         detailed_label.object_name = (
@@ -201,7 +210,7 @@ def main(args=None) -> None:
     executor.add_node(node)
 
     try:
-        rclpy.spin(node)
+        executor.spin()
 
     except KeyboardInterrupt:
         pass

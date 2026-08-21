@@ -50,16 +50,20 @@ class BehaviorExecutorNode(Node):
 
         self.blackboard = OdiBlackboard()
 
+        self.current_behavior = BehaviorName.NONE
+        self.current_status = BehaviorStatus.IDLE
+        self.current_detail = "Waiting for mission"
+
         # 탐험 액션 클라이언트
-        self.explore_action_client = ActionClient(
+        self.exploration_action_client = ActionClient(
             self,
             Explore,
             "/explore",
         )
-        self.explore_goal_active = False
-        self.explore_goal_handle = None
-        self.explore_cancel_requested = False
-        self.explore_mode = "FRONTIER"
+        self.exploration_goal_active = False
+        self.exploration_goal_handle = None
+        self.exploration_cancel_requested = False
+        self.exploration_mode = "FRONTIER"
 
         #인카운터 액션 클라이언트
         self.first_encounter_action_client = ActionClient(
@@ -69,6 +73,7 @@ class BehaviorExecutorNode(Node):
         )
         self.first_encounter_goal_active = False
         self.first_encounter_goal_handle = None
+        self.first_encounter_cancel_requested = False
 
         #귀가 액션 클라이언트
         self.return_home_action_client = ActionClient(
@@ -78,7 +83,7 @@ class BehaviorExecutorNode(Node):
         )
         self.return_home_goal_active = False
         self.return_home_goal_handle = None
-        self.return_prepared = False
+        self.return_home_prepared = False
 
 
         #호기심 판단 서비스 서버
@@ -89,27 +94,23 @@ class BehaviorExecutorNode(Node):
         self.curiosity_request_active = False
 
         #관찰 액션 클라이언트
-        self.observe_object_action_client = ActionClient(
+        self.observation_action_client = ActionClient(
             self,
             ObserveObject,
             "/observe_object",
         )
-        self.observe_object_goal_active = False
-        self.observe_object_goal_handle = None
-
-
-        self.current_behavior = BehaviorName.NONE
-        self.current_status = BehaviorStatus.IDLE
-        self.current_detail = "Waiting for mission"
+        self.observation_goal_active = False
+        self.observation_goal_handle = None
+        self.observation_cancel_requested = False
 
         #반영 액션 클라이언트
-        self.reflect_action_client = ActionClient(
+        self.reflection_action_client = ActionClient(
             self,
             Reflect,
             "/reflect",
         )
-        self.reflect_goal_active = False
-        self.reflect_goal_handle = None
+        self.reflection_goal_active = False
+        self.reflection_goal_handle = None
 
         # mission manager의 미션 상태 구독
         self.mission_state_subscriber = self.create_subscription(
@@ -168,8 +169,8 @@ class BehaviorExecutorNode(Node):
 
         if msg.state == "IDLE":
             self.blackboard.reset()
-            self.explore_mode = "FRONTIER"
-            self.return_prepared = False
+            self.exploration_mode = "FRONTIER"
+            self.return_home_prepared = False
 
     def detected_objects_callback(
             self,
@@ -300,8 +301,8 @@ class BehaviorExecutorNode(Node):
             or self.blackboard.return_requested
             or self.blackboard.mission_state == "RETURNING"
         ):
-            if not self.return_prepared:
-                self.prepare_for_return()
+            if not self.return_home_prepared:
+                self.return_home_preparation()
                 return
 
             self.set_behavior(
@@ -317,7 +318,7 @@ class BehaviorExecutorNode(Node):
         if (
             self.blackboard.mission_state == "EXPLORING"
             and not self.blackboard.exploration_finished_requested
-            and self.should_finish_exploration()
+            and self.exploration_is_finished()
         ):
             self.finish_exploration()
             return
@@ -449,11 +450,11 @@ class BehaviorExecutorNode(Node):
         )
 
     def start_exploration(self) -> None:
-        if self.explore_goal_active:
+        if self.exploration_goal_active:
             return
         if self.blackboard.exploration_paused:
             return
-        if not self.explore_action_client.server_is_ready():
+        if not self.exploration_action_client.server_is_ready():
             self.get_logger().warning(
                 "Exploration action server is not ready"
             )
@@ -461,9 +462,9 @@ class BehaviorExecutorNode(Node):
 
         goal_msg = Explore.Goal()
         goal_msg.session_id = "odi_exploration"
-        goal_msg.mode = self.explore_mode
+        goal_msg.mode = self.exploration_mode
 
-        self.explore_goal_active = True
+        self.exploration_goal_active = True
         self.blackboard.exploration_active = True
 
         self.get_logger().info(
@@ -478,19 +479,19 @@ class BehaviorExecutorNode(Node):
             )
 
         send_goal_future = (
-            self.explore_action_client.send_goal_async(
+            self.exploration_action_client.send_goal_async(
                 goal_msg,
                 feedback_callback=(
-                    self.explore_feedback_callback
+                    self.exploration_feedback_callback
                 ),
             )
         )
 
         send_goal_future.add_done_callback(
-            self.explore_goal_response_callback
+            self.exploration_goal_response_callback
         )
 
-    def explore_goal_response_callback(
+    def exploration_goal_response_callback(
             self,
             future,
     ) -> None:
@@ -500,7 +501,7 @@ class BehaviorExecutorNode(Node):
             self.get_logger().error(
                 f"Failed to send Explore goal : {error}"
             )
-            self.explore_goal_active = False
+            self.exploration_goal_active = False
             self.blackboard.exploration_active = False
             return
 
@@ -508,11 +509,11 @@ class BehaviorExecutorNode(Node):
             self.get_logger().warning(
                 "Explore goal was rejected"
             )
-            self.explore_goal_active = False
+            self.exploration_goal_active = False
             self.blackboard.exploration_active = False
             return
 
-        self.explore_goal_handle = goal_handle
+        self.exploration_goal_handle = goal_handle
 
         self.get_logger().info(
             "Explore goal was accepted"
@@ -520,12 +521,12 @@ class BehaviorExecutorNode(Node):
 
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(
-            self.explore_result_callback
+            self.exploration_result_callback
         )
         if self.blackboard.exploration_paused:
             self.pause_exploration()
 
-    def explore_feedback_callback(
+    def exploration_feedback_callback(
             self,
             feedback_msg,
     ) -> None:
@@ -541,13 +542,14 @@ class BehaviorExecutorNode(Node):
             f"progress = {feedback.progress:.2f}"
         )
 
-    def explore_result_callback(
+    def exploration_result_callback(
             self,
             future,
     ) -> None:
 
-        self.explore_goal_active = False
-        self.explore_goal_handle = None
+        self.exploration_goal_active = False
+        self.exploration_goal_handle = None
+        self.exploration_cancel_requested = False
         self.blackboard.exploration_active = False
 
         try:
@@ -576,8 +578,8 @@ class BehaviorExecutorNode(Node):
                 )
                 self.blackboard.exploration_completed = False
 
-                if not self.should_finish_exploration():
-                    self.explore_mode = "ROAM"
+                if not self.exploration_is_finished():
+                    self.exploration_mode = "ROAM"
                     self.get_logger().info(
                         "Exploration mode changed : FRONTIER -> ROAM"
                     )
@@ -589,7 +591,7 @@ class BehaviorExecutorNode(Node):
             if explore_result.status == "COMPLETED":
                 self.get_logger().info(
                     "\n::Explore complete::\n"
-                    f"mode = {self.explore_mode}\n"
+                    f"mode = {self.exploration_mode}\n"
                     f"message = {explore_result.message}"
                 )
                 self.blackboard.exploration_completed = True
@@ -604,30 +606,29 @@ class BehaviorExecutorNode(Node):
         self.blackboard.exploration_completed = False
 
     def pause_exploration(self) -> None:
-        if not self.explore_goal_active:
+        if not self.exploration_goal_active:
             return
-        if self.explore_goal_handle is None:
+        if self.exploration_goal_handle is None:
             return
-        if self.explore_cancel_requested:
+        if self.exploration_cancel_requested:
             return
 
-        self.explore_cancel_requested = True
+        self.exploration_cancel_requested = True
+
         self.get_logger().info(
             "Exploration cancel requested"
         )
         cancel_future = (
-            self.explore_goal_handle.cancel_goal_async()
+            self.exploration_goal_handle.cancel_goal_async()
         )
         cancel_future.add_done_callback(
-            self.explore_cancel_callback
+            self.exploration_cancel_callback
         )
 
-    def explore_cancel_callback(
+    def exploration_cancel_callback(
             self,
             future,
     ) -> None:
-
-        self.explore_cancel_requested = False
 
         try:
             cancel_response = future.result()
@@ -635,19 +636,21 @@ class BehaviorExecutorNode(Node):
             self.get_logger().error(
                 f"Failed to cancel explore goal : {error}"
             )
+            self.exploration_cancel_requested = False
             return
 
         if len(cancel_response.goals_canceling) == 0:
             self.get_logger().warning(
                 "Explore goal cancel was rejected"
             )
+            self.exploration_cancel_requested = False
             return
 
         self.get_logger().info(
             "Explore goal cancel was accepted"
         )
 
-    def should_finish_exploration(self) -> bool:
+    def exploration_is_finished(self) -> bool:
 
         motivation_empty = (
             self.blackboard.motivation <= 0
@@ -659,7 +662,7 @@ class BehaviorExecutorNode(Node):
         )
 
         timeout = (
-            self.is_exploration_timeout()
+            self.exploration_is_timeout()
         )
 
         if timeout:
@@ -687,7 +690,7 @@ class BehaviorExecutorNode(Node):
             f"elapsed_time = {elapsed_time:.1f}s"
         )
 
-        if self.explore_goal_active:
+        if self.exploration_goal_active:
             self.pause_exploration()
 
         self.publish_behavior_event(
@@ -801,16 +804,20 @@ class BehaviorExecutorNode(Node):
         # First Encounter의 최종 결과를  처리한다.
         self.first_encounter_goal_active = False
         self.first_encounter_goal_handle = None
+        self.first_encounter_cancel_requested = False
 
         try:
             wrapped_result = future.result()
 
             if wrapped_result.status == GoalStatus.STATUS_CANCELED:
-                self.get_logger().info(
-                    "\n First encounter canceled"
-                )
+
                 self.first_encounter_goal_active = False
                 self.first_encounter_goal_handle = None
+                self.first_encounter_cancel_requested = False
+
+                self.get_logger().info(
+                    "\nFirst_encounter canceled"
+                )
                 return
 
             encounter_result = wrapped_result.result.result
@@ -853,11 +860,17 @@ class BehaviorExecutorNode(Node):
         )
 
     def cancel_first_encounter(self) -> None:
+
         if not self.first_encounter_goal_active:
             return
 
         if self.first_encounter_goal_handle is None:
             return
+
+        if self.first_encounter_cancel_requested:
+            return
+
+        self.first_encounter_cancel_requested = True
 
         self.get_logger().info(
             "First Encounter cancel requested"
@@ -877,17 +890,21 @@ class BehaviorExecutorNode(Node):
 
         try:
             response = future.result()
+
         except Exception as error:
             self.get_logger().error(
                 f"\nFailed to cancel First encounter : {error}"
             )
+            self.first_encounter_cancel_requested = False
             return
 
         if not response.goals_canceling:
             self.get_logger().warning(
                 "\nFirst encounter cancel was rejected"
             )
+            self.first_encounter_cancel_requested = False
             return
+
         self.get_logger().info(
             "\nFirst encounter cancel was accepted"
         )
@@ -1006,7 +1023,7 @@ class BehaviorExecutorNode(Node):
         )
 
     def start_observation(self) -> None:
-        if self.observe_object_goal_active:
+        if self.observation_goal_active:
             return
 
         encounter_result = self.blackboard.encounter_result
@@ -1030,7 +1047,7 @@ class BehaviorExecutorNode(Node):
             )
             return
 
-        if not self.observe_object_action_client.server_is_ready():
+        if not self.observation_action_client.server_is_ready():
             self.get_logger().warning(
                 "Observe Object action server is not ready"
             )
@@ -1040,7 +1057,7 @@ class BehaviorExecutorNode(Node):
         goal_msg.encounter = encounter_result
         goal_msg.decision = curiosity_decision
 
-        self.observe_object_goal_active = True
+        self.observation_goal_active = True
 
         self.get_logger().info(
             "\n::Observation goal requested::\n"
@@ -1049,7 +1066,7 @@ class BehaviorExecutorNode(Node):
         )
 
         send_goal_future = (
-            self.observe_object_action_client.send_goal_async(
+            self.observation_action_client.send_goal_async(
                 goal_msg,
                 feedback_callback=(
                     self.observation_feedback_callback
@@ -1070,7 +1087,7 @@ class BehaviorExecutorNode(Node):
             self.get_logger().error(
                 f"Failed to send observation goal : {error}"
             )
-            self.observe_object_goal_active = False
+            self.observation_goal_active = False
             self.blackboard.current_stage = (
                 ObjectProcessStage.FAILED
             )
@@ -1080,13 +1097,13 @@ class BehaviorExecutorNode(Node):
             self.get_logger().warning(
                 "Observation goal was rejected"
             )
-            self.observe_object_goal_active = False
+            self.observation_goal_active = False
             self.blackboard.current_stage = (
                 ObjectProcessStage.FAILED
             )
             return
 
-        self.observe_object_goal_handle = goal_handle
+        self.observation_goal_handle = goal_handle
 
         self.get_logger().info(
             "Observation goal was accepted"
@@ -1120,18 +1137,23 @@ class BehaviorExecutorNode(Node):
         future,
     ) -> None:
 
-        self.observe_object_goal_active = False
-        self.observe_object_goal_handle = None
+        self.observation_goal_active = False
+        self.observation_goal_handle = None
+        self.observation_cancel_requested = False
 
         try:
             wrapped_result = future.result()
 
             if wrapped_result.status == GoalStatus.STATUS_CANCELED:
+
+                self.observation_goal_active = False
+                self.observation_goal_handle = None
+                self.observation_cancel_requested = False
+
                 self.get_logger().info(
                     "\nObservation canceled"
                 )
-                self.observe_object_goal_active = False
-                self.observe_object_goal_handle = None
+
                 return
 
             observation_result = wrapped_result.result.result
@@ -1175,16 +1197,22 @@ class BehaviorExecutorNode(Node):
         )
 
     def cancel_observation(self) -> None:
-        if not self.observe_object_goal_active:
+
+        if not self.observation_goal_active:
             return
-        if self.observe_object_goal_handle is None:
+        if self.observation_goal_handle is None:
             return
+        if self.observation_cancel_requested:
+            return
+
+        self.observation_cancel_requested = True
+
         self.get_logger().info(
             "\nObservation cancel requested"
         )
 
         cancel_future = (
-            self.observe_object_goal_handle.cancel_goal_async()
+            self.observation_goal_handle.cancel_goal_async()
         )
         cancel_future.add_done_callback(
             self.observation_cancel_callback
@@ -1202,12 +1230,14 @@ class BehaviorExecutorNode(Node):
             self.get_logger().error(
                 f"\nFailed to cancel observation : {error}"
             )
+            self.observation_cancel_requested = False
             return
 
         if not response.goals_canceling:
             self.get_logger().warning(
                 "\nObservation cancel was rejected"
             )
+            self.observation_cancel_requested = False
             return
 
         self.get_logger().info(
@@ -1344,7 +1374,7 @@ class BehaviorExecutorNode(Node):
             result.message,
         )
 
-    def prepare_for_return(self) -> None:
+    def return_home_preparation(self) -> None:
         self.get_logger().info(
             "\n::Preparing for return::\n"
         )
@@ -1353,19 +1383,19 @@ class BehaviorExecutorNode(Node):
 
         self.blackboard.pending_objects.clear()
 
-        if self.explore_goal_active:
+        if self.exploration_goal_active:
             self.pause_exploration()
 
         if self.first_encounter_goal_active:
             self.cancel_first_encounter()
 
-        if self.observe_object_goal_active:
+        if self.observation_goal_active:
             self.cancel_observation()
 
         if(
-            self.explore_goal_active
+            self.exploration_goal_active
             or self.first_encounter_goal_active
-            or self.observe_object_goal_active
+            or self.observation_goal_active
         ):
             self.get_logger().info(
                 "Waiting for active behaviors to stop..."
@@ -1381,7 +1411,7 @@ class BehaviorExecutorNode(Node):
         self.blackboard.curiosity_decision = None
         self.blackboard.observation_result = None
 
-        self.return_prepared = True
+        self.return_home_prepared = True
 
         self.get_logger().info(
             "Return preparation completed"
@@ -1389,10 +1419,10 @@ class BehaviorExecutorNode(Node):
 
 
     def start_reflection(self) -> None:
-        if self.reflect_goal_active:
+        if self.reflection_goal_active:
             return
 
-        if not self.reflect_action_client.server_is_ready():
+        if not self.reflection_action_client.server_is_ready():
             self.get_logger().warning(
                 "Reflect action server is not ready"
             )
@@ -1401,7 +1431,7 @@ class BehaviorExecutorNode(Node):
         goal_msg = Reflect.Goal()
         goal_msg.session_id = "odi_exploration"
 
-        self.reflect_goal_active = True
+        self.reflection_goal_active = True
         self.blackboard.reflection_active = True
 
         self.get_logger().info(
@@ -1410,19 +1440,19 @@ class BehaviorExecutorNode(Node):
         )
 
         send_goal_future = (
-            self.reflect_action_client.send_goal_async(
+            self.reflection_action_client.send_goal_async(
                 goal_msg,
                 feedback_callback = (
-                    self.reflect_feedback_callback
+                    self.reflection_feedback_callback
                 ),
             )
         )
 
         send_goal_future.add_done_callback(
-            self.reflect_goal_response_callback
+            self.reflection_goal_response_callback
         )
 
-    def reflect_goal_response_callback(
+    def reflection_goal_response_callback(
             self,
             future,
     ) -> None:
@@ -1432,7 +1462,7 @@ class BehaviorExecutorNode(Node):
             self.get_logger().error(
                 f"Failed to send Reflect goal : {error}"
             )
-            self.reflect_goal_active = False
+            self.reflection_goal_active = False
             self.blackboard.reflection_active = False
             return
 
@@ -1441,11 +1471,11 @@ class BehaviorExecutorNode(Node):
                 "Reflect goal was rejected"
             )
 
-            self.reflect_goal_active = False
+            self.reflection_goal_active = False
             self.blackboard.reflection_active = False
             return
 
-        self.reflect_goal_handle = goal_handle
+        self.reflection_goal_handle = goal_handle
 
         self.get_logger().info(
             "Reflect goal was accepted"
@@ -1456,17 +1486,17 @@ class BehaviorExecutorNode(Node):
         )
 
         result_future.add_done_callback(
-            self.reflect_result_callback
+            self.reflection_result_callback
         )
 
-    def reflect_feedback_callback(
+    def reflection_feedback_callback(
             self,
             feedback_msg,
     ) -> None:
 
         feedback = feedback_msg.feedback
 
-        self.current_datail = (
+        self.current_detail = (
             f"\n{feedback.stage} : {feedback.message}"
             f"({feedback.progress*100.0:.0f}%)"
         )
@@ -1477,13 +1507,13 @@ class BehaviorExecutorNode(Node):
             f"message = {feedback.message}"
         )
 
-    def reflect_result_callback(
+    def reflection_result_callback(
             self,
             future,
     ) -> None:
 
-        self.reflect_goal_active = False
-        self.reflect_goal_handle = None
+        self.reflection_goal_active = False
+        self.reflection_goal_handle = None
         self.blackboard.reflection_active = False
 
         try:
@@ -1540,7 +1570,7 @@ class BehaviorExecutorNode(Node):
             f"{previous_motivation} -> {self.blackboard.motivation}"
         )
 
-    def is_exploration_timeout(self) -> bool:
+    def exploration_is_timeout(self) -> bool:
         started_at = self.blackboard.exploration_started_at
         if started_at is None:
             return False
