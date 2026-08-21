@@ -16,6 +16,7 @@ class MissionStatus(str, Enum):
     RETURNING = "RETURNING"
     REFLECTING = "REFLECTING"
     COMPLETED = "COMPLETED"
+    RESETTING = "RESETTING"
     ERROR = "ERROR"
 
 class MissionManagerNode(Node):
@@ -143,8 +144,8 @@ class MissionManagerNode(Node):
             self.preparing_timer = None
         # -----
         self.change_status(
-            MissionStatus.IDLE,
-            "MissionStatus Resetted",
+            MissionStatus.RESETTING,
+            "Reset requested",
         )
 
     def behavior_event_callback(
@@ -166,14 +167,18 @@ class MissionManagerNode(Node):
         if event == "RETURN_HOME_COMPLETED":
             self.handle_return_home_completed()
             return
-        if event == "RETURN_HOME_FAILED":
-            self.handle_return_home_failed(msg.detail)
-            return
         if event == "REFLECTION_COMPLETED":
             self.handle_reflection_completed()
             return
+        if event == "RESET_COMPLETED":
+            self.handle_reset_completed()
+            return
+
         if event == "REFLECTION_FAILED":
             self.handle_reflection_failed(msg.detail)
+            return
+        if event == "RETURN_HOME_FAILED":
+            self.handle_return_home_failed(msg.detail)
             return
 
         self.get_logger().warning(
@@ -183,30 +188,30 @@ class MissionManagerNode(Node):
     def handle_exploration_finished(self) -> None:
         if self.current_state != MissionStatus.EXPLORING:
             self.get_logger().warning(
-                "EXPLORATION_FINISHED event ignored\n"
+                "\nEXPLORATION_FINISHED\n"
                 f"Current state = {self.current_state.value}"
             )
             return
         self.change_status(
             MissionStatus.RETURNING,
-            "Exploration completed. Returning home.",
+            "\nExploration completed. Returning home.",
         )
 
     def handle_return_home_completed(self) -> None:
         if self.current_state != MissionStatus.RETURNING:
             self.get_logger().warning(
-                "\nRETURN_HOME_COMPLETED event ignored\n"
+                "\nRETURN_HOME_COMPLETED\n"
                 f"Current State = {self.current_state.value}"
             )
             return
         self.change_status(
             MissionStatus.REFLECTING,
-            "Returned home. Starting reflecting",
+            "\nReturned home. Starting reflecting",
         )
     def handle_reflection_completed(self) -> None:
         if self.current_state != MissionStatus.REFLECTING:
             self.get_logger().warning(
-                "\nREFLECTION_COMPLETED event ignored\n"
+                "\nREFLECTION_COMPLETED\n"
                 f"Current State = {self.current_state.value}"
             )
             return
@@ -215,6 +220,21 @@ class MissionManagerNode(Node):
             "Exploration diary completed",
         )
 
+    def handle_reset_completed(self) -> None:
+        if self.current_state != MissionStatus.RESETTING:
+            self.get_logger().warning(
+                "\nRESET_COMPLETED\n"
+                f"Current state = {self.current_state.value}"
+            )
+            return
+
+        self.change_status(
+            MissionStatus.IDLE,
+            "Mission reset completed",
+        )
+
+
+#실패처리 구간
     def handle_return_home_failed(
             self,
             detail: str,
