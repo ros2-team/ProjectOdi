@@ -1,19 +1,63 @@
+/* ┌─ 연결 지도 ───────────────────────────────────────────────
+ * │ 로드되는 곳 : static/index.html (schema.js 다음)
+ * │
+ * │ 데이터를 받는 곳 :
+ * │     ws://호스트/ws        → bridge/app.py 의 ws()
+ * │     /camera/stream        → bridge/app.py 의 camera_stream()
+ * │
+ * │ schema.js 에서 쓰는 것 : SAY, describe(), why(), nameOf(), clock()
+ * │
+ * │ ★ 아래 S 객체 = bridge/state.py 의 blank_state() 와 1:1
+ * │ ★ el 객체의 id = static/index.html 의 id 와 1:1
+ * │   둘 중 하나만 바꾸면 그 부분이 조용히 안 나온다.
+ * └───────────────────────────────────────────────────────────*/
+
 /* ============================================================
    exploring.js — 탐험 화면
 
-   DOM 을 다시 만들지 않는다.
-   1초마다 innerHTML 을 갈아치우면 <img> 가 매번 다시 로드돼서
-   카메라와 지도가 깜빡인다. 값만 제자리에서 바꾼다.
+   ────────────────────────────────────────────────────────────
+   이 파일의 가장 중요한 설계 결정 : DOM 을 다시 만들지 않는다
+   ────────────────────────────────────────────────────────────
 
-   시나리오는 서버에만 있다 (bridge/fake.py).
-   여기 복사해두면 두 곳이 어긋난다.
+   흔히 이렇게 짠다.
+
+       setInterval(() => {
+         document.getElementById('app').innerHTML = 화면전체만들기();
+       }, 1000);
+
+   간단하고 프로토타입에선 잘 돌아간다. 우리도 처음엔 이랬다.
+   그런데 이미지가 들어오는 순간 무너진다.
+
+   innerHTML 을 갈아치우면 안에 있던 모든 엘리먼트가 파괴되고
+   새로 만들어진다. <img> 도 새로 생기니까 이미지를 처음부터
+   다시 다운로드한다. 1 초마다. CSS 애니메이션도 매초 다시 재생된다.
+
+   그래서 지금은 이렇게 한다.
+
+       el.clock.textContent = clock(S.elapsed_sec);   // 값만 바꾼다
+       el.fill.style.width  = pct + '%';              // 스타일만 바꾼다
+
+   DOM 은 처음 한 번만 만들고, 그 뒤로는 필요한 값만 제자리에서 바꾼다.
+   React 같은 프레임워크가 내부적으로 하는 일을 손으로 하는 것이다.
+   프레임워크를 쓸 만큼 복잡하지 않으니 직접 했다.
+
+   ────────────────────────────────────────────────────────────
+   시나리오는 서버에만 있다
+   ────────────────────────────────────────────────────────────
+
+   가짜 데모 시나리오는 bridge/fake.py 한 곳에만 있다.
+   여기에도 복사해두면 흐름을 고칠 때 한쪽만 고치고 넘어가게 된다.
    ============================================================ */
 
-/* 브리지가 내려주는 모양. bridge/state.py 의 blank_state() 와 1:1. */
+
+/* 브리지가 WebSocket 으로 내려주는 상태.
+   ★ bridge/state.py 의 blank_state() 와 키 이름이 1:1 로 같아야 한다.
+     한쪽만 바꾸면 에러 없이 화면만 조용히 안 바뀐다. */
 const S = {
   mission: 'EXPLORING',
   behavior: 'EXPLORE',
   explore_mode: 'FRONTIER',
+  session_id: '',
   elapsed_sec: 0,
   motivation: 1,
   observed_count: 0,
@@ -23,8 +67,19 @@ const S = {
   discoveries: []
 };
 
-const FEED_MAX = 5;      // 넘치면 우측 컬럼만 길어져 좌우 높이가 어긋난다
+/* 피드에 한 번에 보일 최대 개수.
+   제한이 없으면 발견이 쌓일수록 오른쪽 컬럼만 길어져서
+   왼쪽(카메라+지도)과 높이가 어긋난다. */
+const FEED_MAX = 5;
 
+
+/* ────────────────────────────────────────────────────────────
+   DOM 참조를 미리 잡아둔다.
+
+   매번 getElementById 를 부르면 그때마다 문서를 뒤진다.
+   1 초에 한 번이라 성능 차이는 미미하지만,
+   el.clock 이라고 쓰는 게 코드를 읽기도 훨씬 쉽다.
+   ──────────────────────────────────────────────────────────── */
 const $ = id => document.getElementById(id);
 const el = {
   phase: $('phase'), mode: $('mode'), head: $('head'), clock: $('clock'),
@@ -33,27 +88,53 @@ const el = {
   offline: $('offline'), offlineMsg: $('offlineMsg'), offlineAge: $('offlineAge')
 };
 
-let pulseUntil = 0, lastMotivation = 1;
+
+/* 의욕 게이지 깜빡임 상태 */
+let pulseUntil = 0;        // 이 시각까지 깜빡인다 (밀리초 타임스탬프)
+let lastMotivation = 1;    // 직전 의욕값. 낙차를 감지하려고 들고 있는다
+
+/* 이미 화면에 나타났던 항목들.
+   새로 등장하는 것에만 애니메이션을 주기 위해 기록한다. */
 const seen = new Set();
+
+/* 처음 보는 항목이면 ' fresh' 클래스를 붙이고, 본 적 있으면 빈 문자열.
+
+   (seen.add(k), ' fresh') 는 쉼표 연산자다.
+   앞의 것을 실행하고 뒤의 값을 돌려준다.
+   즉 "seen 에 넣고 나서 ' fresh' 를 반환" 이라는 뜻. */
 const freshOf = k => seen.has(k) ? '' : (seen.add(k), ' fresh');
 
-/* ── 그리기 ──────────────────────────────────────────── */
+
+/* ============================================================
+   그리기
+   ============================================================ */
 
 function paint(){
   const returning = S.mission === 'RETURNING';
 
+  /* 상단 상태 줄.
+     FIRST_ENCOUNTER 같은 상태 이름을 그대로 띄우면 '로그'가 된다.
+     SAY 표(schema.js)로 사람 말로 번역해야 '캐릭터'가 된다. */
   el.phase.textContent = returning ? '복귀 중' : '탐험 중';
   el.mode.textContent  = returning ? 'RETURN' : S.explore_mode;
   el.head.textContent  = returning ? SAY.RETURNING : (SAY[S.behavior] || SAY.EXPLORE);
   el.clock.textContent = clock(S.elapsed_sec);
 
-  /* 의욕이 뭉텅 깎이면 한 번 깜빡인다 */
+  /* ── 의욕 게이지 ──────────────────────────────────────
+     평상시엔 아주 천천히 줄고(초당 0.17%), 관찰을 마칠 때
+     뭉텅 깎인다(-14%). 그 낙차를 감지해 한 번 깜빡인다.
+
+     0.02 라는 문턱값이 중요하다. 이게 없으면 초당 소모분에도
+     반응해서 게이지가 계속 깜빡거린다. */
   if(S.motivation < lastMotivation - 0.02) pulseUntil = Date.now() + 900;
   lastMotivation = S.motivation;
 
   const pct = Math.round(S.motivation * 100);
   const dropping = Date.now() < pulseUntil;
+
   el.fill.style.width = pct + '%';
+  /* classList.toggle(클래스, 조건) — 조건이 참이면 붙이고 거짓이면 뗀다.
+     if/else 로 add/remove 를 나눠 쓰는 것보다 간결하다. */
   el.fill.classList.toggle('drop', dropping);
   el.drive.classList.toggle('spent', dropping);
   el.drive.textContent = pct + '%' + (S.observed_count ? ` · 관찰 ${S.observed_count}` : '');
@@ -63,20 +144,38 @@ function paint(){
   paintFeed();
 }
 
-/* MJPEG 스트림은 <img> 를 한 번만 만들고 다시는 건드리지 않는다.
-   매번 교체하면 32KB 를 새로 받느라 깜빡인다. 브라우저가 알아서 이어 그린다. */
+
+/* MJPEG 스트림은 <img> 를 딱 한 번만 만들고 다시는 건드리지 않는다.
+
+   매번 교체하면 32KB 를 새로 받느라 깜빡인다.
+   한 번 걸어두면 브라우저가 알아서 계속 이어 그린다.
+
+   S.camera 가 null 인 동안은 만들지 않는다.
+   ros_link 가 첫 프레임을 받아야 null 에서 벗어나므로,
+   카메라가 없을 때 깨진 이미지 아이콘이 뜨는 걸 막는다. */
 function paintCamera(){
   if(S.camera && !el.cam.dataset.stream){
-    el.cam.dataset.stream = '1';
+    el.cam.dataset.stream = '1';   // 만들었다는 표시. 두 번 만들지 않는다
     el.cam.innerHTML = '<img src="/camera/stream" alt="Odi가 보는 화면">';
   }
   el.shotAt.textContent = S.camera?.at || '—';
 }
 
+
+/* 지도. 아직 5 단계라 실제로는 안 쓰이지만 구조는 완성돼 있다.
+
+   ★ 좌표 변환을 브리지에서 하는 이유
+     지도 PNG 는 미탐색 영역을 잘라내고(crop) 만든다.
+     그 crop 범위가 탐험이 진행되며 계속 바뀌는데,
+     프론트는 그걸 알 도리가 없다.
+     브리지가 픽셀 좌표까지 계산해서 내려주면
+     프론트는 그냥 점만 찍으면 된다. */
 function paintMap(){
   const m = S.map;
 
   if(!m || !m.url){
+    /* dataset.mode 로 '이미 이 상태로 그렸다'를 기억한다.
+       안 그러면 1 초마다 같은 HTML 을 다시 써서 낭비다. */
     if(el.mapbox.dataset.mode !== 'wait'){
       el.mapbox.dataset.mode = 'wait';
       el.mapbox.innerHTML = '<div class="wait">지도를 그리는 중</div>';
@@ -84,7 +183,8 @@ function paintMap(){
     return;
   }
 
-  /* map.seq 가 올라갔을 때만 PNG 를 다시 받는다 */
+  /* map.seq 가 올라갔을 때만 PNG 를 다시 받는다.
+     지도는 3 초에 한 번쯤 갱신되므로 매초 다시 받을 이유가 없다. */
   if(el.mapbox.dataset.seq !== String(m.seq)){
     el.mapbox.dataset.seq = String(m.seq);
     el.mapbox.dataset.mode = 'map';
@@ -104,14 +204,27 @@ function paintMap(){
     return;
   }
 
-  /* 같은 지도면 경로와 현재 위치만 갱신 — 이미지는 건드리지 않는다 */
+  /* 같은 지도면 경로선과 현재 위치만 갱신한다.
+     <img> 는 건드리지 않으므로 다시 다운로드되지 않는다. */
   const trail = el.mapbox.querySelector('#trail');
   if(trail && m.path) trail.setAttribute('points', m.path.map(p => p.join(',')).join(' '));
   const pose = el.mapbox.querySelector('#pose');
   if(pose && m.pose){ pose.setAttribute('cx', m.pose[0]); pose.setAttribute('cy', m.pose[1]); }
 }
 
-/* 피드는 내용이 바뀔 때만 다시 그린다 */
+
+/* 발견 피드는 항목이 추가·변경되므로 다시 그려야 한다.
+   대신 '내용이 실제로 바뀌었을 때만' 그린다.
+
+   ★ signature 기법
+     지금 상태를 짧은 문자열 하나로 요약해 두고,
+     지난번과 같으면 아무것도 하지 않는다.
+
+       "d5:OBSERVE:1|d4:IGNORE:0|d3:OBSERVE:1|..."
+
+     발견 개수, 각각의 판단, 관찰 완료 여부가 전부 들어있어서
+     이 중 하나라도 바뀌면 문자열이 달라진다.
+     시계가 1 초 올라간 것만으로는 다시 그리지 않는다. */
 function paintFeed(){
   el.queue.hidden = !S.queue.length;
   if(S.queue.length) el.queue.textContent = '다음 차례 · ' + S.queue.join(', ');
@@ -119,7 +232,7 @@ function paintFeed(){
   const sig = S.discoveries
     .map(d => `${d.detection_id}:${d.decision?.action || '-'}:${d.observed ? 1 : 0}`)
     .join('|');
-  if(el.feed.dataset.sig === sig) return;
+  if(el.feed.dataset.sig === sig) return;    // 똑같다 → 아무것도 안 함
   el.feed.dataset.sig = sig;
 
   if(!S.discoveries.length){
@@ -134,10 +247,23 @@ function paintFeed(){
     (rest > 0 ? `<div class="more">그 외 ${rest}개는 일기에서</div>` : '');
 }
 
-/* IGNORE도 반드시 남긴다. 지나친 게 보여야 고른 게 의미를 갖는다.
-   사진은 지금 보고 있는 것에만 — 끝난 것까지 달면 우측만 계속 길어진다. */
+
+/* 발견 항목 하나를 HTML 로.
+
+   ★ IGNORE 를 반드시 남긴다
+     지나친 물체를 화면에서 빼면 Odi 가 '눈에 띄는 걸 다 찍는 로봇'으로 보인다.
+     지나친 게 보여야 '골라서 관찰한다'는 게 전달된다.
+     이 프로젝트의 핵심이 호기심 판단인데, 그게 드러나는 자리가 여기뿐이다.
+
+     대신 흐리고 작게 그린다. 시각적 무게 차이 자체가 판단을 보여준다.
+
+   ★ 사진은 지금 보고 있는 것에만
+     관찰이 끝난 항목까지 사진을 달면 오른쪽 컬럼만 계속 길어져서
+     왼쪽과 높이가 어긋난다. 그리고 사진이 화면에 하나만 있으면
+     시선이 자동으로 '지금 Odi 가 보고 있는 것'으로 간다. */
 function entryHtml(d){
-  const a = d.decision?.action;
+  const a = d.decision?.action;   // ?. 는 decision 이 null 이어도 안전하게 접근
+
   const cls = a === 'IGNORE' ? 'ignore' : (d.observed ? 'done' : 'observe');
   const tag = a === 'IGNORE'  ? ''
             : d.observed      ? '<span class="tag done">관찰 완료</span>'
@@ -148,8 +274,12 @@ function entryHtml(d){
   const shot = live
     ? `<div class="photo">${d.photo_url ? `<img src="${d.photo_url}" alt="">` : '사진'}</div>`
     : '';
-  const reason = why(d);
 
+  const reason = why(d);   // "유사도 0.88 · 2번째 · 상태 다름 · 호기심 0.67"
+
+  /* freshOf 의 키에 판단과 관찰 여부를 넣는 이유 :
+     같은 물체라도 '판단 전 → 관찰 중 → 완료' 로 바뀔 때마다
+     새로 나타난 것처럼 한 번씩 애니메이션되게 하려는 것이다. */
   return `
   <div class="entry ${cls}${freshOf(d.detection_id + ':' + (a || 'new') + ':' + (d.observed ? 1 : 0))}">
     <div class="name mono">${nameOf(d)}</div>
@@ -159,28 +289,71 @@ function entryHtml(d){
   </div>`;
 }
 
-/* ── 브리지 연결 ─────────────────────────────────────
-   상태의 주인은 로봇이다. 웹은 받은 것만 그린다. */
 
+/* ============================================================
+   브리지 연결
+
+   ★ 원칙 : 상태의 주인은 로봇이다. 웹은 받은 것만 그린다.
+
+     시작 버튼을 눌렀다고 화면을 바로 EXPLORING 으로 바꾸면 안 된다.
+     로봇이 실제로 못 뜨면 화면만 거짓말을 하게 된다.
+     명령은 보내되, 표시는 로봇이 보고한 것만.
+   ============================================================ */
+
+/* location.host 는 지금 보고 있는 주소의 '호스트:포트' 다.
+   localhost:8000 으로 열었으면 "localhost:8000",
+   192.168.0.17:8000 으로 열었으면 "192.168.0.17:8000".
+
+   덕분에 주소를 코드에 박아넣지 않아도 되고,
+   폰에서 접속해도 알아서 로봇 IP 로 붙는다. */
 const WS_URL = `ws://${location.host || 'localhost:8000'}/ws`;
-let lastMsgAt = 0, everConnected = false;
+
+let lastMsgAt = 0;         // 마지막으로 메시지를 받은 시각
+let everConnected = false; // 한 번이라도 붙은 적 있는지
 
 function connect(){
   let ws;
-  try { ws = new WebSocket(WS_URL); } catch(e){ return setTimeout(connect, 2000); }
+  try {
+    ws = new WebSocket(WS_URL);
+  } catch(e){
+    return setTimeout(connect, 2000);   // 2 초 뒤 재시도
+  }
 
-  ws.onopen    = () => { everConnected = true; };
+  ws.onopen = () => { everConnected = true; };
+
   ws.onmessage = e => {
     lastMsgAt = Date.now();
-    try { Object.assign(S, JSON.parse(e.data)); paint(); }
-    catch(err){ console.error('bad payload', err); }
+    try {
+      /* Object.assign(대상, 출처) — 출처의 속성을 대상에 덮어쓴다.
+         서버가 전체 상태를 보내주므로 통째로 덮어쓰면 된다.
+         S = JSON.parse(...) 라고 하면 안 된다 —
+         S 는 const 이기도 하고, 다른 함수들이 참조하는 객체가 바뀌어버린다. */
+      Object.assign(S, JSON.parse(e.data));
+      paint();
+    } catch(err){
+      console.error('bad payload', err);
+    }
   };
+
+  /* 연결이 끊기면 2 초 뒤 다시 시도한다.
+     서버를 재시작해도 브라우저 새로고침 없이 알아서 붙는다. */
   ws.onclose = () => setTimeout(connect, 2000);
-  ws.onerror = () => {};
+  ws.onerror = () => {};   // onclose 가 뒤따라 오므로 여기선 아무것도 안 한다
 }
 
-/* 마지막 수신 시각으로 연결 상태를 판단한다.
-   화면이 멈춘 건지 로봇이 멈춘 건지 구분되어야 한다. */
+
+/* 연결 상태 감시.
+
+   ★ 왜 ws.readyState 를 안 보고 시각으로 판단하는가
+     연결은 살아있는데 서버가 멈춰서 아무것도 안 보내는 경우가 있다.
+     그때 readyState 는 OPEN 이라 정상으로 보인다.
+     '마지막으로 뭔가 받은 지 얼마나 됐나'가 더 정확한 신호다.
+
+   ★ 왜 두 문구를 구분하는가
+     한 번도 못 붙은 것과 붙었다 끊긴 것은 원인이 완전히 다르다.
+     전자는 서버가 안 켜졌거나 주소가 틀린 것,
+     후자는 로봇/네트워크 문제.
+     디버깅할 때 이 구분이 시간을 크게 줄여준다. */
 setInterval(() => {
   const age = lastMsgAt ? (Date.now() - lastMsgAt) / 1000 : 999;
   el.offline.hidden = age < 5;
@@ -195,5 +368,9 @@ setInterval(() => {
   }
 }, 1000);
 
+
+/* 시작.
+   paint() 를 먼저 부르는 이유 : WebSocket 이 붙기 전에도
+   초기 상태로 화면이 그려져 있어야 빈 화면이 안 보인다. */
 paint();
 connect();

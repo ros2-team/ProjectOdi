@@ -132,6 +132,102 @@ button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--lamp);outl
       padding:12px 0 0 16px;border-left:1px solid var(--ink-line)}
 .empty{font-size:13.5px;color:var(--on-ink-faint);line-height:1.8}
 
-/* 일기 화면 스타일은 여기 아래에 붙인다 (diary.html 만들 때) */
+/* ============================================================
+   일기 화면 (diary.html)
+
+   탐험 화면과 의도적으로 다르게 생겼다.
+   탐험은 훑어보는 실시간 UI, 일기는 처음부터 끝까지 읽는 물건이다.
+   그래서 세리프 본문 + 세로 한 줄기 + 넉넉한 여백으로 간다.
+
+   ★ 카드 그리드로 만들면 안 된다
+     카드가 2열로 놓이는 순간 사람 눈은 "골라서 보는 것"으로 인식한다.
+     그러면 "오늘 이런 일이 있었다"는 이야기가 사라지고
+     "오늘 찍은 사진 모음"이 된다. 일기가 아니라 앨범이 되는 것이다.
+   ============================================================ */
+
+.diary{max-width:600px;margin:0 auto;padding:8px 0 60px}
+
+/* ── 표지 ─────────────────────────────────────────────
+   숫자는 셋까지. 시간·발견·관찰.
+   여기에 거리, 프론티어 개수, 의욕 소모량까지 붙이기 시작하면
+   일기가 아니라 리포트가 된다. */
+.cover{text-align:center;padding:20px 0 34px;
+       border-bottom:1px solid var(--paper-line);margin-bottom:38px}
+.cover .d{font-family:var(--data);font-size:11.5px;letter-spacing:.1em;
+          color:var(--on-paper-dim);margin-bottom:10px}
+.cover h1{font-family:var(--voice);font-size:27px;font-weight:400;margin-bottom:20px}
+.cover .stats{display:flex;justify-content:center;gap:30px;
+              font-size:12.5px;color:var(--on-paper-dim);font-family:var(--data)}
+
+/* ── 여는 문장 / 닫는 문장 ─────────────────────────────
+   가운데 정렬에 조금 큰 글씨. 본문 단락과 구분되어야
+   "시작"과 "끝"으로 읽힌다. */
+.said-big{font-family:var(--voice);font-size:20px;line-height:1.85;
+          text-align:center;margin:0 0 44px}
+.said-big.close{margin:44px 0 0}
+
+/* ── 관찰 블록 : 사진 → 글 ────────────────────────────
+   순서가 중요하다. 글을 먼저 놓고 사진을 아래 두면
+   사진이 '증빙'처럼 보인다. 사진이 먼저여야 이야기의 일부가 된다. */
+.blk{margin-bottom:46px}
+.blk .shot{aspect-ratio:3/2;border-radius:8px;margin-bottom:16px;overflow:hidden;
+           background:#E7E4DA;display:flex;align-items:center;justify-content:center;
+           color:#9C978B;font-size:12px}
+.blk .shot img{width:100%;height:100%;object-fit:cover;display:block}
+.blk p{font-family:var(--voice);font-size:16.5px;line-height:1.95;margin-bottom:10px}
+.blk .meta{font-family:var(--data);font-size:11.5px;color:var(--on-paper-dim)}
+
+/* AI 가 글을 못 만든 블록. 사진과 시각만 남기고 조용히 넘어간다. */
+.blk.textless .meta{margin-top:2px}
+
+/* ── 지나친 것들 ──────────────────────────────────────
+   사진+글 블록을 주면 "골라서 관찰한다"가 무너진다.
+   그렇다고 빼면 고른 것의 의미가 사라진다. 한 줄로 남긴다. */
+.passed{font-family:var(--voice);font-size:15.5px;line-height:1.9;
+        color:var(--on-paper-dim);padding-left:16px;
+        border-left:1px solid var(--paper-line)}
+
+/* ── 오늘 다닌 길 ─────────────────────────────────────
+   맨 아래가 맞다. 위에 두면 관제 화면 냄새가 나고,
+   아래 두면 "오늘 이만큼 다녔구나" 하는 마무리가 된다. */
+.route{margin-top:52px;padding-top:26px;border-top:1px solid var(--paper-line)}
+.route h3{font-size:11px;letter-spacing:.12em;color:var(--on-paper-dim);
+          margin-bottom:14px;font-weight:400}
+.route .frame{border:1px solid var(--paper-line);border-radius:10px;
+              overflow:hidden;background:var(--paper-raised);position:relative}
+.route .frame img{display:block;width:100%;image-rendering:pixelated}
+.route .wait{padding:44px 0;text-align:center;font-size:12px;color:var(--on-paper-dim)}
+
+/* ── 하단 버튼 ────────────────────────────────────────── */
+.footer{display:flex;gap:10px;justify-content:center;margin-top:44px}
+.footer button,.footer a{display:inline-block;padding:13px 30px;border-radius:999px;
+  border:1px solid var(--paper-line);font-size:14px;color:var(--on-paper-dim);
+  text-decoration:none;transition:border-color .2s,color .2s}
+.footer button:hover,.footer a:hover{border-color:var(--on-paper-dim);color:var(--on-paper)}
+
+/* ── 일기 쓰는 중 (REFLECTING) / 오류 ────────────────── */
+.interlude{min-height:62vh;display:flex;flex-direction:column;
+           justify-content:center;align-items:center;text-align:center}
+.interlude .dots{display:flex;gap:9px;margin-bottom:30px}
+.interlude .dots i{width:6px;height:6px;border-radius:50%;
+                   background:var(--lamp);opacity:.25;animation:pulse 1.5s ease-in-out infinite}
+.interlude .dots i:nth-child(2){animation-delay:.2s}
+.interlude .dots i:nth-child(3){animation-delay:.4s}
+@keyframes pulse{0%,100%{opacity:.2}50%{opacity:1}}
+.interlude h2{font-family:var(--voice);font-size:23px;font-weight:400;margin-bottom:12px}
+.interlude p{font-size:14px;color:var(--on-paper-dim);font-weight:300;line-height:1.8}
+
+/* ── 지난 일기 목록 ──────────────────────────────────── */
+.past{max-width:460px;margin:0 auto}
+.past h2{font-size:11px;font-weight:400;letter-spacing:.1em;
+         color:var(--on-paper-dim);margin-bottom:6px}
+.past a{display:flex;align-items:baseline;gap:14px;text-decoration:none;color:inherit;
+        padding:15px 4px;border-bottom:1px solid var(--paper-line);
+        transition:padding-left .2s ease}
+.past a:hover{padding-left:10px}
+.past .d{font-family:var(--data);font-size:12px;color:var(--on-paper-dim);flex-shrink:0}
+.past .t{font-family:var(--voice);font-size:15px;flex:1;
+         overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.past .n{font-size:12px;color:var(--on-paper-dim);flex-shrink:0}
 
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
