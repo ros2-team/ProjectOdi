@@ -92,6 +92,7 @@ class BehaviorExecutorNode(Node):
             "/evaluate_curiosity",
         )
         self.curiosity_request_active = False
+        self.curiosity_response_ignored = False
 
         #관찰 액션 클라이언트
         self.observation_action_client = ActionClient(
@@ -171,6 +172,7 @@ class BehaviorExecutorNode(Node):
             self.blackboard.reset()
             self.exploration_mode = "FRONTIER"
             self.return_home_prepared = False
+            self.curiosity_response_ignored = False
 
     def detected_objects_callback(
             self,
@@ -948,16 +950,38 @@ class BehaviorExecutorNode(Node):
             self.curiosity_response_callback
         )
 
-    def curiosity_response_callback(self, future) -> None:
+    def curiosity_response_callback(
+        self,
+        future,
+    ) -> None:
+
         self.curiosity_request_active = False
+
         try:
             response = future.result()
+
         except Exception as error:
             self.get_logger().error(
                 f"Curiosity service call failed : {error}"
             )
+
+            if self.blackboard.mission_state == "RETURNING":
+                return
+
             self.blackboard.current_stage = (
                 ObjectProcessStage.FAILED
+            )
+            return
+
+        if(
+            self.blackboard.mission_state == "RETURNING"
+            or self.return_home_prepared
+        ):
+
+            self.curiosity_response_ignored = True
+            self.get_logger().info(
+                "\n::Curiosity response ignored::\n"
+                "Mission is already returning"
             )
             return
 
@@ -1391,6 +1415,12 @@ class BehaviorExecutorNode(Node):
 
         if self.observation_goal_active:
             self.cancel_observation()
+
+        if self.curiosity_request_active:
+            self.get_logger().info(
+                "\nCuriosity request is active\n"
+                "The response will be ignored"
+            )
 
         if(
             self.exploration_goal_active

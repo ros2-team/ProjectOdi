@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import rclpy
+import time
 from rclpy.node import Node
 
 from odi_interfaces.msg import CuriosityDecision
@@ -35,6 +36,8 @@ class MockCuriosityServer(Node):
             f"object_name = "
             f"{encounter.label.object_name}"
         )
+
+        time.sleep(3.0)
 
         decision = CuriosityDecision()
 
