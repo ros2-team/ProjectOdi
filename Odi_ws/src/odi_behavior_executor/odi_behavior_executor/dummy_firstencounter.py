@@ -20,13 +20,6 @@ class MockFirstEncounterServer(Node):
     def __init__(self) -> None:
         super().__init__("mock_first_encounter_server")
 
-        self.action_server = ActionServer(
-            self,
-            FirstEncounter,
-            "/first_encounter",
-            self.execute_callback,
-        )
-
         self.callback_group = ReentrantCallbackGroup()
 
         self.action_server = ActionServer(
