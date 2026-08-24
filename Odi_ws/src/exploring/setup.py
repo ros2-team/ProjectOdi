@@ -24,6 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'bearing_probe_node = exploring.bearing_probe:main',
+            'map_trinary_node = exploring.map_trinary:main',
         ],
     },
 )
