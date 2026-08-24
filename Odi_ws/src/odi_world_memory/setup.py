@@ -24,6 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'world_memory_node = odi_world_memory.world_memory_node:main',
+
         ],
     },
 )
