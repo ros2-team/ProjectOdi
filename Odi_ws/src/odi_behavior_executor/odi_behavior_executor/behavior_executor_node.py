@@ -468,6 +468,16 @@ class BehaviorExecutorNode(Node):
             return
 
         if stage == ObjectProcessStage.FAILED:
+
+            current_object = self.blackboard.current_object
+
+            if current_object is not None:
+                self.get_logger().warning(
+                    "\n::Object processing failed::\n"
+                    f"detection_id = {current_object.detection_id}\n"
+                    f"class = {current_object.class_name}"
+                )
+
             self.set_behavior(
                 BehaviorName.NONE,
                 BehaviorStatus.FAILURE,
@@ -475,6 +485,7 @@ class BehaviorExecutorNode(Node):
             )
             self.complete_current_object()
             return
+
         self.set_behavior(
             BehaviorName.NONE,
             BehaviorStatus.IDLE,
@@ -620,20 +631,6 @@ class BehaviorExecutorNode(Node):
                 self.finish_exploration()
                 return
 
-            if wrapped_result.status == GoalStatus.STATUS_ABORTED:
-                self.get_logger().error(
-                    "\n::Explore aborted::\n"
-                    f"message = {explore_result.message}"
-                )
-
-                self.publish_behavior_event(
-                    "EXPLORATION_FAILED",
-                    explore_result.message,
-                )
-
-                self.blackboard.exploration_completed = False
-                return
-
             if explore_result.status == "COMPLETED":
                 self.get_logger().info(
                     "\n::Explore complete::\n"
@@ -642,6 +639,20 @@ class BehaviorExecutorNode(Node):
                 )
                 self.blackboard.exploration_completed = True
                 return
+
+        if wrapped_result.status == GoalStatus.STATUS_ABORTED:
+            self.get_logger().error(
+                "\n::Explore aborted::\n"
+                f"message = {explore_result.message}"
+            )
+
+            self.publish_behavior_event(
+                "EXPLORATION_FAILED",
+                explore_result.message,
+            )
+
+            self.blackboard.exploration_completed = False
+            return
 
         self.get_logger().warning(
             "\n::Explore ended unexpectedly::\n"
@@ -1662,6 +1673,7 @@ class BehaviorExecutorNode(Node):
                 str(error),
             )
             return
+
         if not reflection_result.success:
             self.get_logger().warning(
                 "\n::Reflection failed::\n"

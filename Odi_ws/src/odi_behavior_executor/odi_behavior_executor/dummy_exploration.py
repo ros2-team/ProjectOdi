@@ -118,6 +118,19 @@ class MockExploreServer(Node):
         )
         return result
 
+        #실패처리 테스트용
+        # self.get_logger().info(
+        #     "Mock exploration aborted"
+        # )
+        # goal_handle.abort()
+        # result = Explore.Result()
+        # result.status = "FAILED"
+        # result.visited_area_id = ""
+        # result.message = (
+        #     "Mock exploration aborted"
+        # )
+        # return result
+
     def run_roam_mode(
         self,
         goal_handle,
