@@ -19,11 +19,14 @@ class GeminiVisionNode(Node):
         # 제미나이 API 키 셋업 (구글 AI 스튜디오에서 발급받은 키 입력)
         self.client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
+        ##################################################### sub ######################################################
         # 이미지 yolo노드에서 받아오기
         self.subscription = self.create_subscription(CompressedImage, '/vla/trigger_image/compressed', self.image_callback, 10)
 
+
+        ##################################################### pub ##########################################################
         # 메세지 타입 퍼블리쉬
-        self.scene_publisher = self.create_publisher(SemanticLabel, '/perception/scene_data', 10)
+        self.scene_publisher = self.create_publisher(SemanticLabel, '/perception/scene_data_1st', 10)
 
         self.bridge = CvBridge()
         

@@ -62,144 +62,82 @@ class GeminiVisionNode(Node):
         # ---------------- 1차 프롬프트 (원거리) ----------------
         # 멀리서 재질이나 상태를 물어보면 Gemini 는 모른다고 하지 않고 지어낸다.
         # 그래서 원거리에서도 믿을 수 있는 3개만 물어본다.
-
         self.first_prompt = """
-                            당신은 탐사 로봇의 시각 인지 모듈입니다.
+                                당신은 탐사 로봇의 시각 인지 모듈입니다.
+                                이 이미지는 물체와 어느 정도 떨어진 거리에서 촬영되었습니다.
 
-                            입력된 이미지를 분석하여 아래 JSON 형식으로만 응답하세요.
+                                입력된 이미지를 분석하여 아래 JSON 형식으로만 응답하세요.
 
-                            {
-                                "object_name": "",
-                                "primary_color": "",
-                                "secondary_color": "",
-                                "material": "",
-                                "shape": "",
-                                "condition": ""
-                            }
+                                {
+                                    "object_name": "",
+                                    "primary_color": "",
+                                    "shape": ""
+                                }
 
-                            규칙
+                                규칙
 
-                            - object_name
-                            물체의 대표 이름을 영어 소문자로 작성합니다.
-                            예시: bottle, chair, box, person, laptop, backpack
+                                - object_name
+                                물체의 대표 이름을 영어 소문자로 작성합니다.
+                                예시: bottle, chair, box, person, laptop, backpack
 
-                            - primary_color
-                            가장 눈에 띄는 색상을 영어 소문자로 작성합니다.
-                            예시: red, blue, black, white
+                                - primary_color
+                                가장 눈에 띄는 색상을 영어 소문자로 작성합니다.
+                                예시: red, blue, black, white
 
-                            - secondary_color
-                            두 번째로 많이 보이는 색상입니다.
-                            없다면 "none"을 작성합니다.
+                                - shape
+                                대표적인 형태를 영어 소문자로 작성합니다.
+                                가능한 값: rectangle, cylinder, sphere, cube, irregular
 
-                            - material
-                            추정되는 재질을 영어 소문자로 작성합니다.
-                            예시:
-                            plastic
-                            metal
-                            wood
-                            fabric
-                            glass
-                            paper
-                            rubber
-
-                            - shape
-                            대표적인 형태를 영어 소문자로 작성합니다.
-                            예시:
-                            rectangle
-                            cylinder
-                            sphere
-                            cube
-                            irregular
-
-                            - condition
-                            물체의 현재 상태를 영어 소문자로 작성합니다.
-
-                            가능한 값:
-                            New
-                            NORMAL
-                            OLD
-                            DIRTY
-                            DAMAGED
-
-                            반드시 JSON만 출력하세요.
-                            Markdown이나 설명은 절대 출력하지 마세요.
-        """
-        # self.first_prompt = """
-        #         당신은 탐사 로봇의 시각 인지 모듈입니다.
-        #         이 이미지는 물체와 어느 정도 떨어진 거리에서 촬영되었습니다.
-
-        #         입력된 이미지를 분석하여 아래 JSON 형식으로만 응답하세요.
-
-        #         {
-        #             "object_name": "",
-        #             "primary_color": "",
-        #             "shape": ""
-        #         }
-
-        #         규칙
-
-        #         - object_name
-        #         물체의 대표 이름을 영어 소문자로 작성합니다.
-        #         예시: bottle, chair, box, person, laptop, backpack
-
-        #         - primary_color
-        #         가장 눈에 띄는 색상을 영어 소문자로 작성합니다.
-        #         예시: red, blue, black, white
-
-        #         - shape
-        #         대표적인 형태를 영어 소문자로 작성합니다.
-        #         가능한 값: rectangle, cylinder, sphere, cube, irregular
-
-        #         거리가 멀어 확실하지 않은 항목은 추측하지 말고 "unknown" 을 작성하세요.
-        #         반드시 JSON만 출력하세요.
-        #         Markdown이나 설명은 절대 출력하지 마세요.
-        # """
+                                거리가 멀어 확실하지 않은 항목은 추측하지 말고 "unknown" 을 작성하세요.
+                                반드시 JSON만 출력하세요.
+                                Markdown이나 설명은 절대 출력하지 마세요.
+                            """
 
         # ---------------- 2차 프롬프트 (근접) ----------------
         self.second_prompt = """
-                당신은 탐사 로봇의 시각 인지 모듈입니다.
-                이 이미지는 물체 바로 앞에서 근접 촬영되었습니다.
+                                당신은 탐사 로봇의 시각 인지 모듈입니다.
+                                이 이미지는 물체 바로 앞에서 근접 촬영되었습니다.
 
-                입력된 이미지를 분석하여 아래 JSON 형식으로만 응답하세요.
+                                입력된 이미지를 분석하여 아래 JSON 형식으로만 응답하세요.
 
-                {
-                    "object_name": "",
-                    "primary_color": "",
-                    "secondary_color": "",
-                    "material": "",
-                    "shape": "",
-                    "condition": ""
-                }
+                                {
+                                    "object_name": "",
+                                    "primary_color": "",
+                                    "secondary_color": "",
+                                    "material": "",
+                                    "shape": "",
+                                    "condition": ""
+                                }
 
-                규칙
+                                규칙
 
-                - object_name
-                물체의 대표 이름을 영어 소문자로 작성합니다.
-                예시: bottle, chair, box, person, laptop, backpack
+                                - object_name
+                                물체의 대표 이름을 영어 소문자로 작성합니다.
+                                예시: bottle, chair, box, person, laptop, backpack
 
-                - primary_color
-                가장 눈에 띄는 색상을 영어 소문자로 작성합니다.
-                예시: red, blue, black, white
+                                - primary_color
+                                가장 눈에 띄는 색상을 영어 소문자로 작성합니다.
+                                예시: red, blue, black, white
 
-                - secondary_color
-                두 번째로 많이 보이는 색상입니다. 없다면 "none" 을 작성합니다.
+                                - secondary_color
+                                두 번째로 많이 보이는 색상입니다. 없다면 "none" 을 작성합니다.
 
-                - material
-                추정되는 재질을 영어 소문자로 작성합니다.
-                가능한 값: plastic, metal, wood, fabric, glass, paper, rubber
+                                - material
+                                추정되는 재질을 영어 소문자로 작성합니다.
+                                가능한 값: plastic, metal, wood, fabric, glass, paper, rubber
 
-                - shape
-                대표적인 형태를 영어 소문자로 작성합니다.
-                가능한 값: rectangle, cylinder, sphere, cube, irregular
+                                - shape
+                                대표적인 형태를 영어 소문자로 작성합니다.
+                                가능한 값: rectangle, cylinder, sphere, cube, irregular
 
-                - condition
-                물체의 현재 상태를 영어 소문자로 작성합니다.
-                가능한 값: new, normal, old, dirty, damaged
+                                - condition
+                                물체의 현재 상태를 영어 소문자로 작성합니다.
+                                가능한 값: new, normal, old, dirty, damaged
 
-                확실하지 않은 항목은 추측하지 말고 "unknown" 을 작성하세요.
-                반드시 JSON만 출력하세요.
-                Markdown이나 설명은 절대 출력하지 마세요.
-        """
+                                확실하지 않은 항목은 추측하지 말고 "unknown" 을 작성하세요.
+                                반드시 JSON만 출력하세요.
+                                Markdown이나 설명은 절대 출력하지 마세요.
+                            """
 
         # 제미니 모델
         self.model = 'gemini-3.5-flash-lite'

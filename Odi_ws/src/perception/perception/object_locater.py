@@ -6,8 +6,9 @@ from rclpy.time import Time
 from rclpy.duration import Duration
 
 from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import PointStamped
+from geometry_msgs.msg import PointStamped, PoseStamped
 from odi_interfaces.msg import DetectedObject
+
 
 import tf2_ros
 from tf2_geometry_msgs import do_transform_point
@@ -26,6 +27,7 @@ class ObjectLocator(Node):
         # ================== 네가 채울 값 ==================
         self.scan_topic = '/scan'
         self.yolo_topic = '/observe/locate_request'
+        self.approach_goal_topic = '/observe/approach_goal'
         
         self.image_width = 320    # YOLO 에 들어가는 실제 이미지 가로 픽셀
         self.fx = 270.2           # bearing_probe 로 구한 값으로 교체할 것
@@ -42,57 +44,66 @@ class ObjectLocator(Node):
         # ---- 테스트 모드 (검증 끝나면 False 로) ----
         # YOLO 가 찍어준 bbox 의 좌/우 x 픽셀을 손으로 넣고
         # 2초마다 좌표를 계산해서 로그로 출력한다.
-        # self.test_mode = True
-        # self.test_u_left = 58.0
-        # self.test_u_right = 72.0
-        # # =================================================
+        self.test_mode = False
+        self.test_u_left = 87.0
+        self.test_u_right = 102.0
+        # # # =================================================
+
         ############################################# 구독 #################################################
         self.latest_scan = None
         self.create_subscription(LaserScan, self.scan_topic, self.scan_cb, qos_profile_sensor_data)
 
-        self.create_subscription(DetectedObject, self.yolo_topic, self.image_cb, 10)
+        self.create_subscription(DetectedObject, self.yolo_topic, self.request_cb, 10)
+
+        ################################################ 발행 #####################################################
+        self.goal_pub = self.create_publisher(PoseStamped, self.approach_goal_topic, 10)
 
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
 
-        self.create_timer(2.0, self.test_tick)
-        self.get_logger().info('test_mode ON (u_left=%.1f, u_right=%.1f)'
-                                           % (self.test_u_left, self.test_u_right))
+        # self.create_timer(2.0, self.test_tick)
+        # self.get_logger().info('test_mode ON (u_left=%.1f, u_right=%.1f)'
+        #                                    % (self.test_u_left, self.test_u_right))
         
-        # if self.test_mode:
-        #     self.create_timer(2.0, self.test_tick)
-        #     self.get_logger().info('test_mode ON (u_left=%.1f, u_right=%.1f)'
-        #                            % (self.test_u_left, self.test_u_right))
+        if self.test_mode:
+            self.create_timer(2.0, self.test_tick)
+            self.get_logger().info('test_mode ON (u_left=%.1f, u_right=%.1f)'
+                                   % (self.test_u_left, self.test_u_right))
 
     # ---------------- 콜백은 저장만 ----------------
 
     def scan_cb(self, msg):
         self.latest_scan = msg
 
-    def image_cb(self, msg):
-        if msg:
-            self.center_x = msg.center_x
-            self.width = msg.width
-        else:
-            pass
-
-        self.u_left = self.center_x - (self.width // 2)
-        self.u_right = self.center_x + (self.width // 2)
-
     def test_tick(self):
-        result = self.locate(self.u_left, self.u_right)
+        res = self.locate(self.test_u_left, self.test_u_right)
 
-        if result:
-            pt = PointStamped()
-            pt.header.frame_id = self.map_frame
-            pt.header.stamp = self.get_clock().now().to_msg()
-            pt.point.x = result['map_x']
-            pt.point.y = result['map_y']
-            pt.point.z = 0.0
+        if res is not None:
+            self.publish_goal(res)
+
+    def request_cb(self, msg):
+        obj = msg        # DetectedObject 단일이면 obj = msg
+
+        u_left = obj.center_x - obj.width / 2.0
+        u_right = obj.center_x + obj.width / 2.0
+
+        res = self.locate(u_left, u_right)
+
+        if res is not None:
+            self.publish_goal(res)
+    
+    def publish_goal(self, res):
+        p = PoseStamped()
+        p.header.frame_id = self.map_frame
+        p.header.stamp = self.get_clock().now().to_msg()
+        p.pose.position.x = res['goal_x']
+        p.pose.position.y = res['goal_y']
+        p.pose.orientation.z = math.sin(res['goal_yaw'] / 2.0)
+        p.pose.orientation.w = math.cos(res['goal_yaw'] / 2.0)
+        self.goal_pub.publish(p)
 
     # ---------------- 계산 ----------------
-
     def pixel_to_bearing(self, u):
         """이미지 u 좌표(픽셀) -> 로봇 정면 기준 각도(rad). 왼쪽이 +"""
         return math.atan2(self.cx - u, self.fx)
@@ -221,11 +232,6 @@ class ObjectLocator(Node):
 def main():
     rclpy.init()
     node = ObjectLocator()
-
-    # 검증이 끝나면 test_mode 를 끄고,
-    # 네 detection 콜백에서 bbox 좌/우 x 픽셀을 뽑아
-    # node.locate(u_left, u_right) 를 호출하도록 연결하면 된다.
-
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

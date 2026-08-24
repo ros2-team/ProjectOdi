@@ -25,9 +25,17 @@ setup(
     entry_points={
         'console_scripts': [
             'vlm_node = perception.vlm_node:main',
-            'yolo_test_node = perception.yolo_test:main',
+            'yolo_node = perception.yolo_node:main',
+            'coordinator_node = perception.coordinator:main',
+
             'map_trinary_node = perception.map_trinary:main',
             'object_locater_node = perception.object_locater:main',
+
+            'yolo_test_node = perception.yolo_test_0821:main',
+            'vlm_test_node = perception.vlm_test_0821:main',
+            'cord_test_node = perception.cord_test_0821:main',
+            'yolo_test = perception.yolo_test:main',
+
             'bearing_probe_node = perception.bearing_probe:main',
         ],
     },
