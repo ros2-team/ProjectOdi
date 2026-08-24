@@ -22,12 +22,15 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/SemanticLabel.msg"
   "msg/EncounterResult.msg"
   "msg/ObservationResult.msg"
+  "msg/BehaviorEvent.msg"
 
   "srv/EvaluateCuriosity.srv"
 
   "action/ObserveObject.action"
   "action/Explore.action"
   "action/FirstEncounter.action"
+  "action/ReturnHome.action"
+  "action/Reflect.action"
 
   DEPENDENCIES
   std_msgs
