@@ -174,6 +174,9 @@ class MissionManagerNode(Node):
             self.handle_reset_completed()
             return
 
+        if event == "EXPLORATION_FAILED":
+            self.handle_exploration_failed(msg.detail)
+            return
         if event == "REFLECTION_FAILED":
             self.handle_reflection_failed(msg.detail)
             return
@@ -235,6 +238,22 @@ class MissionManagerNode(Node):
 
 
 #실패처리 구간
+    def handle_exploration_failed(
+            self,
+            detail: str,
+    ) -> None:
+        if self.current_state != MissionStatus.EXPLORING:
+            self.get_logger().warning(
+                "\nEXPLORATION_FAILED\n"
+                f"Current state = {self.current_state.value}"
+            )
+            return
+
+        self.change_status(
+            MissionStatus.ERROR,
+            f"Exploration failed {detail}",
+        )
+
     def handle_return_home_failed(
             self,
             detail: str,
