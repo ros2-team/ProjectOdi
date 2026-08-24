@@ -620,6 +620,20 @@ class BehaviorExecutorNode(Node):
                 self.finish_exploration()
                 return
 
+            if wrapped_result.status == GoalStatus.STATUS_ABORTED:
+                self.get_logger().error(
+                    "\n::Explore aborted::\n"
+                    f"message = {explore_result.message}"
+                )
+
+                self.publish_behavior_event(
+                    "EXPLORATION_FAILED",
+                    explore_result.message,
+                )
+
+                self.blackboard.exploration_completed = False
+                return
+
             if explore_result.status == "COMPLETED":
                 self.get_logger().info(
                     "\n::Explore complete::\n"
