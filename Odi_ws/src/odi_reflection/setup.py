@@ -24,7 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            "reflection_node = odi_reflection.reflection_node:main",
+            "reflection_node = odi_reflection.odi_reflection_node:main",
         ],
     },
 )
