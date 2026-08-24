@@ -24,6 +24,10 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'vlm_node = first_encounter.vlm_node:main',
+            'vlm_test_node = first_encounter.vlm_test_0821:main',
+            'yolo_node = first_encounter.yolo_node:main',
+            'yolo_test_node = first_encounter.yolo_teet:main',
         ],
     },
 )
