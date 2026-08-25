@@ -23,8 +23,14 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/EncounterResult.msg"
   "msg/ObservationResult.msg"
   "msg/BehaviorEvent.msg"
+  "msg/StoredObservation.msg"
 
   "srv/EvaluateCuriosity.srv"
+  "srv/GetMissionObservations.srv"
+  "srv/GetSimilarObservations.srv"
+  "srv/SaveDiary.srv"
+  "srv/SaveObservation.srv"
+
 
   "action/ObserveObject.action"
   "action/Explore.action"
