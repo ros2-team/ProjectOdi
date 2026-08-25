@@ -1,4 +1,4 @@
-
+string session_id
 odi_interfaces/EncounterResult encounter
 odi_interfaces/CuriosityDecision decision
 ---
