@@ -6,7 +6,10 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 
 from datetime import timezone
 
-from odi_interfaces.msg import StoredObservation
+from odi_interfaces.msg import (
+    MissionState,
+    StoredObservation,
+)
 
 from odi_interfaces.srv import (
     GetMissionObservations,
@@ -17,19 +20,31 @@ from odi_interfaces.srv import (
 from odi_world_memory.database import Database
 
 class WorldMemoryNode(Node):
+
+    TERMINAL_MISSION_STATES = {
+        'COMPLETED',
+        'ERROR',
+        'RESETTING',
+    }
+
     def __init__(self):
         super().__init__('world_memory_node')
 
-        self.callback_group = ReentrantCallbackGroup()
         self.database = Database()
-
         database_name = self.database.test_connection()
         self.get_logger().info(
             f"Connected to Mysql database : {database_name}"
         )
 
-        self.get_logger().info("Odi world memory node is running")
+        self.callback_group = ReentrantCallbackGroup()
 
+        self.mission_state_subscription = self.create_subscription(
+            MissionState,
+            '/mission/state',
+            self.mission_state_callback,
+            10,
+            callback_group = self.callback_group,
+        )
         self.save_observation_service = self.create_service(
             SaveObservation,
             '/world_memory/save_observation',
@@ -48,6 +63,59 @@ class WorldMemoryNode(Node):
             self.get_similar_observation_callback,
             callback_group = self.callback_group,
         )
+        self.save_diary_service = self.create_service(
+            SaveDiary,
+            '/world_memory/save_diary',
+            self.save_diary_callback,
+            callback_group = self.callback_group,
+        )
+
+        self.get_logger().info("Odi world memory node is running")
+
+    def mission_state_callback(
+            self,
+            message
+    ):
+
+        if not message.session_id:
+            self.get_logger().debug(
+                "\n MissionState ignored : session_id is empty"
+            )
+            return
+
+        if message.state == 'IDLE':
+            return
+
+        is_terminal = (
+            message.state
+            in self.TERMINAL_MISSION_STATES
+        )
+
+        updated_at = self.database.ros_time_to_datetime(
+            message.updated_at
+        )
+
+        try:
+            self.database.upsert_mission(
+                session_id = message.session_id,
+                status = message.state,
+                detail = message.detail,
+                updated_at = updated_at,
+                is_terminal = is_terminal,
+            )
+
+            self.get_logger().info(
+                f"\n :: Mission state saved ::"
+                f"\n session = {message.session_id}"
+                f"\n state = {message.state}"
+            )
+
+        except Exception as error:
+            self.get_logger().error(
+                f"\n Failed to save mission state : {error}"
+            )
+
+
 
     def save_observation_callback(
             self,
@@ -94,6 +162,51 @@ class WorldMemoryNode(Node):
             response.success = False
             response.memory_id = ''
             response.message = f'Database error : {error}'
+            self.get_logger().error(response.message)
+
+        return response
+
+    def save_diary_callback(
+            self,
+            request,
+            response,
+    ):
+        if not request.session_id:
+            response.success = False
+            response.message = 'session_id is empty'
+            return response
+
+        if not request.diary_text.strip():
+            response.success = False
+            response.message = 'diary_text is empty'
+            return response
+
+        model_name = request.model_name.strip()
+
+        if not model_name:
+            model_name = 'unknown'
+
+        try:
+            diary_id = self.database.save_diary(
+                request.session_id,
+                request.diary_text,
+                model_name,
+            )
+            response.success = True
+            response.diary_id = diary_id
+            response.message = 'Diary saved successfully'
+
+            self.get_logger().info(
+                f"\n ::Diary saved::"
+                f"\n session_id = {request.session_id}"
+                f"\n diary_id = {diary_id}"
+            )
+
+        except Exception as error:
+            response.success = False
+            response.diary_id = ''
+            response.message = f"Database error : {error}"
+
             self.get_logger().error(response.message)
 
         return response

@@ -52,21 +52,6 @@ class Database:
 
         return result['database_name']
 
-    @staticmethod
-    def ros_time_to_datetime(time_message):
-        if time_message.sec == 0 and time_message.nanosec == 0:
-            return None
-
-        timestamp = (
-            time_message.sec
-            + time_message.nanosec / 1_000_000_000
-        )
-
-        return datetime.fromtimestamp(
-            timestamp,
-            tz=timezone.utc,
-        ).replace(tzinfo=None)
-
     def save_observation(self, session_id, observation):
         new_memory_id = str(uuid.uuid4())
         label = observation.detailed_label
@@ -212,6 +197,78 @@ class Database:
         finally:
             connection.close()
 
+
+    def save_diary(
+            self,
+            session_id,
+            diary_text,
+            model_name,
+    ):
+        new_diary_id = str(uuid.uuid4())
+        connection = self.connect()
+        try:
+            with connection.cursor() as cursor:
+
+                cursor.execute(
+                    """
+                    INSERT INTO missions (
+                        session_id,
+                        status
+                    )
+                    VALUES (%s, 'REFLECTING')
+                    ON DUPLICATE KEY UPDATE
+                        updated_at = CURRENT_TIMESTAMP(6)
+                    """,
+                    (session_id,),
+                )
+
+                cursor.execute(
+                    """
+                    INSERT INTO diaries (
+                        diary_id,
+                        session_id,
+                        diary_text,
+                        model_name
+                    )
+                    VALUES (%s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        diary_text = VALUES(diary_text),
+                        model_name = VALUES(model_name),
+                        created_at = CURRENT_TIMESTAMP(6)
+                    """,
+                    (
+                        new_diary_id,
+                        session_id,
+                        diary_text,
+                        model_name,
+                    ),
+                )
+
+                cursor.execute(
+                    """
+                    SELECT diary_id
+                    FROM diaries
+                    WHERE session_id = %s
+                    """,
+                    (session_id,),
+                )
+
+                saved_record = cursor.fetchone()
+
+            if saved_record is None:
+                raise RuntimeError(
+                    'Saved diary could not be found'
+                )
+
+            connection.commit()
+            return saved_record['diary_id']
+
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
     def get_mission_observations(self, session_id):
         connection = self.connect()
         try:
@@ -337,6 +394,78 @@ class Database:
 
         finally:
             connection.close()
+
+
+    def upsert_mission(
+            self,
+            session_id,
+            status,
+            detail,
+            updated_at,
+            is_terminal,
+    ):
+        if updated_at is None:
+            updated_at = datetime.now(
+                timezone.utc
+            ).replace(tzinfo=None)
+
+        completed_at = updated_at if is_terminal else None
+        connection = self.connect()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO missions (
+                        session_id,
+                        status,
+                        detail,
+                        started_at,
+                        completed_at,
+                        updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        status = VALUES(status),
+                        detail = VALUES(detail),
+                        completed_at = COALESCE(
+                            VALUES(completed_at),
+                            completed_at
+                        ),
+                        updated_at = VALUES(updated_at)
+                    """,
+                    (
+                        session_id,
+                        status,
+                        detail,
+                        updated_at,
+                        completed_at,
+                        updated_at,
+                    ),
+                )
+
+            connection.commit()
+
+        except Exception:
+            connection.rollback()
+            raise
+
+        finally:
+            connection.close()
+
+    @staticmethod
+    def ros_time_to_datetime(time_message):
+        if time_message.sec == 0 and time_message.nanosec == 0:
+            return None
+
+        timestamp = (
+            time_message.sec
+            + time_message.nanosec / 1_000_000_000
+        )
+
+        return datetime.fromtimestamp(
+            timestamp,
+            tz=timezone.utc,
+        ).replace(tzinfo=None)
 
 
 
