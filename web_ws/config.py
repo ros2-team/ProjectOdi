@@ -24,7 +24,7 @@ PORT = 8000  # 웹 서버 포트 번호
 PUSH_HZ = 1.0  # WebSocket으로 웹 화면에 상태 정보를 보낼 주기 (초당 1회)
 
 # ── 1단계: 가짜 테스트 모드 ────────────────────────────────
-USE_FAKE = True  # True면 로봇(ROS) 없이 가짜 데이터로 테스트, False면 실제 로봇 연결
+USE_FAKE = False  # True면 로봇(ROS) 없이 가짜 데이터로 테스트, False면 실제 로봇 연결
 FAKE_LOOP_SEC = 240  # 테스트 시 리허설용 자동 되돌리기 시간(초)
 
 # ── 2단계: 실제 ROS2 토픽 이름 ────────────────────────────
@@ -44,12 +44,14 @@ DISK_SAVE_SEC = 1.0  # 일기 작성에 쓰일 최신 카메라 이미지를 파
 # CuriosityDecision 은 서비스 응답이라서 브리지가 직접 못 받는다.
 # 액션 result 와 서비스 응답은 요청한 노드에게만 가기 때문이다.
 # → 미션 노드가 받아서 토픽으로 재발행해야 한다. (docs/토픽요청.md 참조)
-TOPIC_MISSION = "/odi/mission_state"        # MissionState        화면 라우팅
-TOPIC_BEHAVIOR = "/odi/behavior_state"      # BehaviorState       상단 큰 문구
-TOPIC_DETECTIONS = "/odi/detections"        # DetectedObjectArray 다음 차례 큐
-TOPIC_ENCOUNTER = "/odi/encounter"          # EncounterResult     ① 처음 만남
-TOPIC_DECISION = "/odi/curiosity_decision"  # CuriosityDecision   ② 호기심 판단
-TOPIC_OBSERVATION = "/odi/observation"      # ObservationResult   ③ 관찰 완료
+TOPIC_MISSION = "/odi/mission_state"                # MissionState        화면 라우팅
+TOPIC_BEHAVIOR = "/odi/behavior_state"              # BehaviorState       상단 큰 문구
+TOPIC_DETECTIONS = "/odi/detections"                # DetectedObjectArray 다음 차례 큐
+#TOPIC_ENCOUNTER = "/perception/scene_data_1st"      # EncounterResult     ① 처음 만남
+TOPIC_DECISION = "/odi/curiosity_decision"          # CuriosityDecision   ② 호기심 판단
+#TOPIC_OBSERVATION = "/perception/scene_data_2nd"    # ObservationResult   ③ 관찰 완료
+TOPIC_ENCOUNTER = "/odi/encounter"        # 로봇 팀이 EncounterResult 로 새로 발행
+TOPIC_OBSERVATION = "/odi/observation"    # 로봇 팀이 ObservationResult 로 새로 발행
 
 TOPIC_MAP = "/map"  # SLAM 지도 데이터
 
@@ -70,5 +72,5 @@ DB = {
 }
 
 # ── 5단계: 지도 관련 설정 ────────────────────────────────
-MAP_THROTTLE_SEC = 3.0  # 지도 PNG 이미지 재생성 간격
+MAP_THROTTLE_SEC = 2.0  # 지도 PNG 이미지 재생성 간격
 MAP_CROP_MARGIN = 10  # 미탐색 영역을 잘라낼 때 남길 여백 크기 (셀)

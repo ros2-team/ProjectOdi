@@ -6,6 +6,17 @@
 문구나 흐름을 고칠 때 한쪽만 고치고 넘어가게 된다.
 """
 
+# ┌─ 연결 지도 ────────────────────────────────────────────────
+# │ ros_link.py 의 자리를 대신한다 (config.USE_FAKE = True 일 때).
+# │
+# │ ★ 중요 : ros_link.py 와 정확히 같은 state 함수를 쓴다.
+# │   그래서 받는 쪽(app.py, 브라우저)은 누가 썼는지 구분 못 한다.
+# │   로봇 없이 만든 화면이 로봇을 붙여도 그대로 동작한 이유다.
+# │
+# │ import : config (FAKE_LOOP_SEC), bridge.state
+# │ 부르는 파일 : run.py 의 start_producers()
+# └────────────────────────────────────────────────────────────
+
 import time
 
 import config
@@ -91,6 +102,18 @@ SCRIPT = [
 
 DRAIN = 0.0022      # 초당 기본 의욕 소모. 행동할 때 spend 로 뭉텅 더 깎인다.
 
+# 시작 버튼을 누르면 True 가 되어 시나리오가 돌기 시작한다.
+# False 인 동안에는 IDLE 화면에 머문다.
+_running = False
+_restart = False
+
+
+def restart():
+    """웹의 시작 버튼(POST /sessions)이 부른다."""
+    global _running, _restart
+    _running = True
+    _restart = True
+
 
 def apply_event(e):
     if "mission" in e:
@@ -123,9 +146,23 @@ def loop():
             rclpy.init()
             rclpy.spin(OdiBridgeNode())
     """
+    global _restart
+
+    # 시작 버튼을 누르기 전까지는 IDLE 에 머문다.
+    state.patch(mission="IDLE")
+
     step = 0
     while True:
         time.sleep(1.0)
+
+        if not _running:
+            continue
+
+        if _restart:            # 시작 버튼이 눌렸다
+            _restart = False
+            step = 0
+            state.reset()
+            state.patch(mission="EXPLORING", session_id="3")
 
         with state.LOCK:
             state.STATE["elapsed_sec"] += 1
@@ -136,6 +173,9 @@ def loop():
             apply_event(SCRIPT[step])
             step += 1
 
-        if elapsed > config.FAKE_LOOP_SEC:
-            state.reset()
-            step = 0
+        # 탐험이 끝나면 일기 쓰는 중 → 일기 완성 순으로 넘어간다.
+        # 실제로는 로봇이 MissionState 로 보고할 상태들이다.
+        if elapsed == config.FAKE_LOOP_SEC - 20:
+            state.patch(mission="REFLECTING")
+        elif elapsed >= config.FAKE_LOOP_SEC:
+            state.patch(mission="COMPLETED")

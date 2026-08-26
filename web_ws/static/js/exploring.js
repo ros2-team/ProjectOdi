@@ -82,6 +82,7 @@ const FEED_MAX = 5;
    ──────────────────────────────────────────────────────────── */
 const $ = id => document.getElementById(id);
 const el = {
+  screen: $('screen'), exploring: $('exploring'),
   phase: $('phase'), mode: $('mode'), head: $('head'), clock: $('clock'),
   fill: $('fill'), drive: $('drive'), cam: $('cam'), shotAt: $('shotAt'),
   mapbox: $('mapbox'), queue: $('queue'), feed: $('feed'),
@@ -106,10 +107,189 @@ const freshOf = k => seen.has(k) ? '' : (seen.add(k), ' fresh');
 
 
 /* ============================================================
-   그리기
+   화면 라우팅
+
+   ★ 사용자가 화면을 고르는 게 아니라 미션 상태가 화면을 결정한다.
+     그래서 "탐험 중인데 시작 버튼이 보인다" 같은 모순이
+     구조적으로 생길 수 없다.
+
+         IDLE        시작 화면
+         PREPARING   "나갈 준비를 하고 있어요"
+         EXPLORING   탐험 화면
+         RETURNING   탐험 화면 ("집으로 돌아가는 중")
+         REFLECTING  "오늘 있었던 일을 정리하는 중"
+         COMPLETED   /diary/{session_id} 로 이동
+
+     개발 중에는 ?screen=IDLE 처럼 주소에 붙여 강제로 볼 수 있다.
    ============================================================ */
 
+const FORCED = new URLSearchParams(location.search).get('screen');
+
+let lastScreen = null;   // 같은 화면을 매초 다시 그리지 않기 위해
+let redirected = false;  // 일기로 두 번 이동하는 것을 막는다
+
+/* ★ 페이지가 열려 있는 동안 COMPLETED 가 아닌 상태를 본 적이 있는가.
+     이게 필요한 이유 :
+       일기 화면에서 '탐험 화면' 링크로 / 에 돌아오면 상태가 아직
+       COMPLETED 라서 곧바로 일기로 다시 튕긴다. 시작 화면에 갈 수가 없다.
+     '탐험이 끝나는 순간을 이 페이지에서 목격했을 때만' 넘기면
+     그 함정이 사라진다. */
+let sawActive = false;
+
+/* 브리지에서 상태를 한 번이라도 받았는가.
+   받기 전에는 S 가 초기값(EXPLORING)이라, 그걸로 화면을 판단하면
+   실제 상태와 무관한 화면이 잠깐 스쳤다가 바뀐다. */
+let gotData = false;
+
 function paint(){
+  /* 첫 데이터가 오기 전에는 아무것도 그리지 않는다.
+     연결이 안 되면 상단 배너가 이유를 알려준다. */
+  if(!gotData && !FORCED) return;
+
+  const mission = FORCED || S.mission;
+
+  /* ── 탐험 화면이 아니면 ────────────────────────────── */
+  if(mission !== 'EXPLORING' && mission !== 'RETURNING'){
+    el.exploring.hidden = true;
+
+    if(mission === 'COMPLETED'){
+      /* 탐험이 방금 끝났다면 그날의 일기로 넘긴다. */
+      if(sawActive && !redirected && !FORCED){
+        redirected = true;
+        location.href = S.session_id ? `/diary/${S.session_id}` : '/diary';
+        return;
+      }
+      /* 이미 끝나 있는 상태로 페이지에 들어온 경우.
+         자동으로 넘기면 시작 화면에 영영 못 가므로 링크만 보여준다. */
+      if(lastScreen === 'COMPLETED') return;
+      lastScreen = 'COMPLETED';
+      renderDone();
+      return;
+    }
+
+    sawActive = true;
+
+    if(lastScreen === mission) return;   // 이미 그린 화면이면 아무것도 안 함
+    lastScreen = mission;
+
+    if(mission === 'IDLE')             renderIdle();
+    else if(mission === 'PREPARING')   renderInterlude('나갈 준비를 하고 있어요',
+                                                       '센서와 지도를 확인하고 있어요.');
+    else if(mission === 'REFLECTING')  renderInterlude('오늘 있었던 일을 정리하는 중',
+                                                       '사진을 고르고 있어요. 잠시만요.');
+    else                               renderInterlude('기다리는 중', mission);
+    return;
+  }
+
+  /* ── 탐험 화면 ────────────────────────────────────── */
+  sawActive = true;
+  if(lastScreen !== 'EXPLORING'){
+    lastScreen = 'EXPLORING';
+    redirected = false;          // 다음 탐험을 위해 초기화
+    el.screen.innerHTML = '';
+    el.exploring.hidden = false;
+  }
+
+  paintExploring();
+}
+
+
+/* ── 시작 화면 ─────────────────────────────────────────
+   탐험 화면이 정보를 빽빽하게 담는다면 여기는 반대다.
+   Odi 를 내보내는 것 말고 할 일이 없는 화면이라
+   시작 버튼이 유일한 초점이 되어야 한다. */
+function renderIdle(){
+  el.screen.innerHTML = `
+    <div class="idle">
+      <div class="mark"><span></span></div>
+      <h1>Odi</h1>
+      <p class="intro">낯선 곳을 혼자 돌아다니다가,<br>
+         마음에 걸리는 걸 만나면 멈춰 서서<br>한참 들여다보는 로봇.</p>
+      <button class="start" id="startBtn">탐험 보내기</button>
+      <div class="past" id="pastList"></div>
+    </div>`;
+
+  document.getElementById('startBtn').addEventListener('click', startMission);
+  loadPast();
+}
+
+/* 지난 일기 목록. 없거나 실패하면 조용히 비워둔다 —
+   시작 버튼이 주인공이라 에러 문구로 시선을 뺏을 이유가 없다. */
+async function loadPast(){
+  try{
+    const items = await (await fetch('/api/sessions')).json();
+    if(!items.length) return;
+    const box = document.getElementById('pastList');
+    if(!box) return;
+    box.innerHTML = `
+      <h2>지난 일기</h2>
+      ${items.map(s => `
+        <a href="/diary/${s.id}">
+          <span class="d">${s.date}</span>
+          <span class="t">${s.line || '(일기 없음)'}</span>
+          <span class="n">관찰 ${s.observed_count}</span>
+        </a>`).join('')}`;
+  }catch(e){
+    console.warn('지난 일기 목록을 불러오지 못했습니다', e);
+  }
+}
+
+/* 탐험을 시작한다.
+
+   ★ 상태의 주인은 로봇이다.
+     버튼을 눌렀다고 화면을 EXPLORING 으로 바꾸지 않는다.
+     로봇이 실제로 못 뜨면 화면만 거짓말을 하게 된다.
+     명령만 보내고, 화면은 로봇이 보고한 상태를 기다린다. */
+async function startMission(){
+  const btn = document.getElementById('startBtn');
+  if(btn){ btn.disabled = true; btn.textContent = '깨우는 중…'; }
+
+  try{
+    const res = await fetch('/sessions', {method: 'POST'});
+    if(res.status === 409){
+      // 이미 탐험 중이다. 중복 시작 방지.
+      if(btn){ btn.disabled = false; btn.textContent = '이미 탐험 중이에요'; }
+      return;
+    }
+  }catch(e){
+    if(btn){ btn.disabled = false; btn.textContent = '연결에 실패했어요'; }
+    return;
+  }
+
+  /* 로봇이 PREPARING 을 보고할 때까지 버튼은 잠긴 채로 둔다.
+     상태가 바뀌면 paint() 가 알아서 화면을 갈아준다. */
+}
+
+/* 이미 탐험이 끝나 있는 상태로 / 에 들어왔을 때.
+   자동 전환 대신 선택지를 준다. */
+function renderDone(){
+  const link = S.session_id ? `/diary/${S.session_id}` : '/diary';
+  el.screen.innerHTML = `
+    <div class="interlude">
+      <h2>오늘 탐험은 끝났어요</h2>
+      <p>일기가 준비되어 있어요.</p>
+      <div class="footer">
+        <a href="${link}">일기 보기</a>
+        <a href="/?screen=IDLE">다시 보내기</a>
+      </div>
+    </div>`;
+}
+
+function renderInterlude(title, sub){
+  el.screen.innerHTML = `
+    <div class="interlude">
+      <div class="dots"><i></i><i></i><i></i></div>
+      <h2>${title}</h2>
+      <p>${sub}</p>
+    </div>`;
+}
+
+
+/* ============================================================
+   탐험 화면 그리기
+   ============================================================ */
+
+function paintExploring(){
   const returning = S.mission === 'RETURNING';
 
   /* 상단 상태 줄.
@@ -185,22 +365,28 @@ function paintMap(){
 
   /* map.seq 가 올라갔을 때만 PNG 를 다시 받는다.
      지도는 3 초에 한 번쯤 갱신되므로 매초 다시 받을 이유가 없다. */
-  if(el.mapbox.dataset.seq !== String(m.seq)){
+   if(el.mapbox.dataset.seq !== String(m.seq)){
     el.mapbox.dataset.seq = String(m.seq);
     el.mapbox.dataset.mode = 'map';
+
+    /* ★ 이미지와 SVG 를 같은 상자에 함께 넣는다.
+       따로 두면 각자 크기를 계산해서 마커가 살짝 어긋난다.
+       aspect-ratio 로 지도 비율을 고정하면 둘이 항상 같은 크기가 된다. */
     el.mapbox.innerHTML =
-      `<img src="${m.url}" alt="탐험 지도">
-       <svg class="layer" viewBox="0 0 ${m.width} ${m.height}"
-            preserveAspectRatio="none" aria-hidden="true">
-         <polyline id="trail" fill="none" stroke="#F0A649" stroke-width="1.5"
-                   stroke-linejoin="round" opacity=".85"
-                   points="${(m.path || []).map(p => p.join(',')).join(' ')}"/>
-         ${(m.markers || []).map(k => k.action === 'OBSERVE'
-            ? `<circle cx="${k.x}" cy="${k.y}" r="4" fill="#F0A649"/>`
-            : `<circle cx="${k.x}" cy="${k.y}" r="2.5" fill="#8DA49F" opacity=".55"/>`
-          ).join('')}
-         <circle id="pose" cx="${m.pose?.[0] || 0}" cy="${m.pose?.[1] || 0}" r="3.5" fill="#E9EFEC"/>
-       </svg>`;
+      `<div class="mapwrap" style="aspect-ratio:${m.width}/${m.height}">
+         <img src="${m.url}" alt="탐험 지도">
+         <svg class="layer" viewBox="0 0 ${m.width} ${m.height}"
+              preserveAspectRatio="none" aria-hidden="true">
+           <polyline id="trail" fill="none" stroke="#F0A649" stroke-width="1.5"
+                     stroke-linejoin="round" opacity=".85"
+                     points="${(m.path || []).map(p => p.join(',')).join(' ')}"/>
+           ${(m.markers || []).map(k => k.action === 'OBSERVE'
+              ? `<circle cx="${k.x}" cy="${k.y}" r="3" fill="#F0A649"/>`
+              : `<circle cx="${k.x}" cy="${k.y}" r="2" fill="#8DA49F" opacity=".55"/>`
+            ).join('')}
+           <circle id="pose" cx="${m.pose?.[0] || 0}" cy="${m.pose?.[1] || 0}" r="2.5" fill="#E9EFEC"/>
+         </svg>
+       </div>`;
     return;
   }
 
@@ -324,12 +510,7 @@ function connect(){
   ws.onmessage = e => {
     lastMsgAt = Date.now();
     try {
-      /* Object.assign(대상, 출처) — 출처의 속성을 대상에 덮어쓴다.
-         서버가 전체 상태를 보내주므로 통째로 덮어쓰면 된다.
-         S = JSON.parse(...) 라고 하면 안 된다 —
-         S 는 const 이기도 하고, 다른 함수들이 참조하는 객체가 바뀌어버린다. */
-      Object.assign(S, JSON.parse(e.data));
-      paint();
+      applyState(JSON.parse(e.data));
     } catch(err){
       console.error('bad payload', err);
     }
@@ -339,6 +520,19 @@ function connect(){
      서버를 재시작해도 브라우저 새로고침 없이 알아서 붙는다. */
   ws.onclose = () => setTimeout(connect, 2000);
   ws.onerror = () => {};   // onclose 가 뒤따라 오므로 여기선 아무것도 안 한다
+}
+
+
+/* 받은 상태를 반영하고 화면을 다시 그린다.
+
+   Object.assign(대상, 출처) — 출처의 속성을 대상에 덮어쓴다.
+   서버가 전체 상태를 보내주므로 통째로 덮어쓰면 된다.
+   S = JSON.parse(...) 라고 하면 안 된다 —
+   S 는 const 이기도 하고, 다른 함수들이 참조하는 객체가 바뀌어버린다. */
+function applyState(data){
+  Object.assign(S, data);
+  gotData = true;
+  paint();
 }
 
 
@@ -370,7 +564,7 @@ setInterval(() => {
 
 
 /* 시작.
-   paint() 를 먼저 부르는 이유 : WebSocket 이 붙기 전에도
-   초기 상태로 화면이 그려져 있어야 빈 화면이 안 보인다. */
-paint();
+   화면은 첫 상태를 받은 뒤에 그려진다 (applyState → paint).
+   그전에 그리면 초기값 기준의 엉뚱한 화면이 잠깐 스친다. */
+if(FORCED) paint();     // ?screen=... 로 강제한 경우만 즉시 그린다
 connect();

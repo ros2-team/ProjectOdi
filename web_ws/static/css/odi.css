@@ -1,3 +1,19 @@
+/* ┌─ 연결 지도 ───────────────────────────────────────────────
+ * │ 이 파일을 넘겨주는 곳 : bridge/app.py 의 css()
+ * │
+ * │ 쓰는 화면 (두 개가 이 파일 하나를 같이 쓴다) :
+ * │     static/index.html   body[data-tone="dark"]   탐험 · 어두움
+ * │     static/diary.html   body[data-tone="light"]  일기 · 종이색
+ * │
+ * │ 클래스를 만드는 곳 :
+ * │     .entry .tag .more        → exploring.js 의 entryHtml()
+ * │     .gauge .fill .cam        → index.html
+ * │     .diary .cover .blk .shot → diary.js 의 render() / blockHtml()
+ * │     .past                    → diary.js 의 renderList()
+ * │
+ * │ ★ 클래스 이름을 바꾸면 그 클래스를 만드는 JS 도 같이 바꿔야 한다.
+ * └───────────────────────────────────────────────────────────*/
+
 /* ============================================================
    Odi — 디자인 토큰 + 공통 컴포넌트
 
@@ -28,8 +44,20 @@
 html{-webkit-text-size-adjust:100%}
 body{font-family:var(--ui);font-weight:400;min-height:100vh;
      transition:background-color .8s ease,color .8s ease}
-body[data-tone="dark"]{background:var(--ink);color:var(--on-ink)}
-body[data-tone="light"]{background:var(--paper);color:var(--on-paper)}
+/* ── 톤 별칭 ──────────────────────────────────────────
+   .interlude / .past / .footer 는 탐험(어두움)과 일기(종이색)
+   양쪽에서 쓴다. 색을 직접 쓰면 한쪽에서 안 보이므로
+   톤에 따라 갈리는 별칭을 만들어 그걸 참조한다. */
+body[data-tone="dark"]{
+  background:var(--ink);color:var(--on-ink);
+  --fg:var(--on-ink); --fg-dim:var(--on-ink-dim); --fg-faint:var(--on-ink-faint);
+  --line:var(--ink-line); --raised:var(--ink-raised);
+}
+body[data-tone="light"]{
+  background:var(--paper);color:var(--on-paper);
+  --fg:var(--on-paper); --fg-dim:var(--on-paper-dim); --fg-faint:var(--on-paper-dim);
+  --line:var(--paper-line); --raised:var(--paper-raised);
+}
 
 .wrap{max-width:960px;margin:0 auto;padding:28px 20px 40px}
 .mono{font-family:var(--data);font-variant-numeric:tabular-nums}
@@ -88,13 +116,25 @@ button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--lamp);outl
 /* ── 지도 ─────────────────────────────────────────────
    <img> 위에 SVG 오버레이. 좌표 변환은 브리지가 해서
    픽셀 좌표로 내려준다. 프론트는 점만 찍는다. */
-.mapbox{border:1px solid var(--ink-line);border-radius:10px;overflow:hidden;
-        background:var(--ink-raised);position:relative}
-.mapbox img{display:block;width:100%;image-rendering:pixelated}
-.mapbox svg{display:block;width:100%;height:auto}
-.mapbox .layer{position:absolute;inset:0;width:100%;height:100%}
-.mapbox .wait{padding:52px 0;text-align:center;font-size:12px;color:var(--on-ink-faint)}
+/* ── 지도 ─────────────────────────────────────────────
+   <img> 위에 SVG 오버레이를 겹친다.
 
+   ★ 높이를 고정하는 이유
+     지도 비율은 탐험할 때마다 달라진다. 세로로 긴 방이면
+     width:100% 만 준 이미지가 세로로 한없이 늘어나서
+     화면 절반을 먹어버린다.
+     높이를 정해두고 object-fit:contain 으로 안에 맞춘다. */
+.mapbox{border:1px solid var(--ink-line);border-radius:10px;overflow:hidden;
+        background:var(--ink-raised);position:relative;height:230px;
+        display:flex;align-items:center;justify-content:center}
+
+/* ★ height:100% 를 줘야 상자 높이에 맞춰 커진다.
+   max-height 만 있으면 원본 크기(120px)로만 그려진다.
+   width:auto 라서 비율은 유지된다. */
+.mapbox .mapwrap{position:relative;height:100%;width:auto;max-width:100%}
+.mapbox .mapwrap img{display:block;width:100%;height:100%;image-rendering:pixelated}
+.mapbox .layer{position:absolute;inset:0;width:100%;height:100%}
+.mapbox .wait{font-size:12px;color:var(--on-ink-faint)}
 /* ── 발견 피드 ────────────────────────────────────────
    이 화면의 시그니처. OBSERVE는 밝고 IGNORE는 흐리다.
    시각적 무게 차이 자체가 호기심 판단을 보여준다.
@@ -201,9 +241,9 @@ button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--lamp);outl
 /* ── 하단 버튼 ────────────────────────────────────────── */
 .footer{display:flex;gap:10px;justify-content:center;margin-top:44px}
 .footer button,.footer a{display:inline-block;padding:13px 30px;border-radius:999px;
-  border:1px solid var(--paper-line);font-size:14px;color:var(--on-paper-dim);
+  border:1px solid var(--line);font-size:14px;color:var(--fg-dim);
   text-decoration:none;transition:border-color .2s,color .2s}
-.footer button:hover,.footer a:hover{border-color:var(--on-paper-dim);color:var(--on-paper)}
+.footer button:hover,.footer a:hover{border-color:var(--fg-dim);color:var(--fg)}
 
 /* ── 일기 쓰는 중 (REFLECTING) / 오류 ────────────────── */
 .interlude{min-height:62vh;display:flex;flex-direction:column;
@@ -215,19 +255,56 @@ button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--lamp);outl
 .interlude .dots i:nth-child(3){animation-delay:.4s}
 @keyframes pulse{0%,100%{opacity:.2}50%{opacity:1}}
 .interlude h2{font-family:var(--voice);font-size:23px;font-weight:400;margin-bottom:12px}
-.interlude p{font-size:14px;color:var(--on-paper-dim);font-weight:300;line-height:1.8}
+.interlude p{font-size:14px;color:var(--fg-dim);font-weight:300;line-height:1.8}
 
 /* ── 지난 일기 목록 ──────────────────────────────────── */
 .past{max-width:460px;margin:0 auto}
 .past h2{font-size:11px;font-weight:400;letter-spacing:.1em;
-         color:var(--on-paper-dim);margin-bottom:6px}
+         color:var(--fg-faint);margin-bottom:6px}
 .past a{display:flex;align-items:baseline;gap:14px;text-decoration:none;color:inherit;
-        padding:15px 4px;border-bottom:1px solid var(--paper-line);
+        padding:15px 4px;border-bottom:1px solid var(--line);
         transition:padding-left .2s ease}
 .past a:hover{padding-left:10px}
-.past .d{font-family:var(--data);font-size:12px;color:var(--on-paper-dim);flex-shrink:0}
+.past .d{font-family:var(--data);font-size:12px;color:var(--fg-faint);flex-shrink:0}
 .past .t{font-family:var(--voice);font-size:15px;flex:1;
          overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.past .n{font-size:12px;color:var(--on-paper-dim);flex-shrink:0}
+.past .n{font-size:12px;color:var(--fg-faint);flex-shrink:0}
+
+/* ============================================================
+   시작 화면 (IDLE)
+
+   탐험 화면이 정보를 빽빽하게 담는다면 여기는 반대다.
+   가운데 정렬, 넉넉한 여백, 요소 넷.
+   Odi 를 내보내는 것 말고 할 일이 없는 화면이라
+   시작 버튼이 유일한 초점이 되어야 한다.
+   ============================================================ */
+
+.idle{min-height:72vh;display:flex;flex-direction:column;
+      justify-content:center;align-items:center;text-align:center}
+
+/* 숨 쉬는 점 — Odi 가 살아있다는 유일한 신호.
+   스피너를 쓰면 '로딩 중'으로 읽히고, 정지된 아이콘을 쓰면
+   꺼져 있는 것처럼 보인다. 느리게 뛰는 게 대기 상태에 맞다. */
+.idle .mark{width:52px;height:52px;border-radius:50%;
+            border:1.5px solid var(--lamp);
+            display:flex;align-items:center;justify-content:center;margin-bottom:26px}
+.idle .mark span{width:9px;height:9px;border-radius:50%;background:var(--lamp);
+                 animation:breathe 3.4s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:.35;transform:scale(.8)}50%{opacity:1;transform:scale(1.25)}}
+
+.idle h1{font-family:var(--voice);font-size:30px;font-weight:400;
+         letter-spacing:.01em;margin-bottom:14px}
+.idle .intro{color:var(--fg-dim);font-size:15px;line-height:1.85;font-weight:300;
+             max-width:31ch;margin-bottom:40px}
+
+.start{padding:15px 44px;border-radius:999px;
+       background:var(--lamp);color:#22160A;font-weight:500;font-size:15px;
+       transition:transform .15s ease,box-shadow .3s ease;
+       box-shadow:0 0 0 0 rgba(240,166,73,.4)}
+.start:hover{transform:translateY(-1px);box-shadow:0 0 34px -6px rgba(240,166,73,.5)}
+.start:active{transform:translateY(0) scale(.98)}
+.start:disabled{opacity:.45;cursor:default;transform:none;box-shadow:none}
+
+.idle .past{margin-top:60px;width:100%;max-width:440px;text-align:left}
 
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}

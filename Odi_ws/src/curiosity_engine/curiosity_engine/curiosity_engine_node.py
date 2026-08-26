@@ -7,7 +7,7 @@ from mysql.connector import Error
 
 from odi_interfaces.msg import CuriosityDecision
 from odi_interfaces.srv import EvaluateCuriosity
-from odi_interfaces.msg import SemanticLabel
+from odi_interfaces.msg import SemanticLabel 
 
 from curiosity_engine.core import (
     ObjectCandidate,
@@ -39,13 +39,13 @@ class CuriosityEngineNode(Node):
 
         self.srv_curiosity = self.create_service(
             EvaluateCuriosity,
-            '/curiosity/evaluate',
+            '/evaluate_curiosity',
             self.evaluate_curiosity_callback
         )
 
         self.sub_perception = self.create_subscription(
             SemanticLabel,
-            '/perception/scene_data',
+            '/perception/scene_data_1st',
             self.perception_callback,
             10
         )
@@ -172,7 +172,7 @@ class CuriosityEngineNode(Node):
         memory, calc_result, action_decision = result
 
         decision_msg = CuriosityDecision()
-        decision_msg.detection_id = str(getattr(encounter_data, 'detection_id', ''))
+        decision_msg.detection_id = str(encounter_data.detection_id)
         decision_msg.curiosity_score = float(calc_result['score'])
         decision_msg.similarity_score = float(memory.similarity)
         decision_msg.action = str(action_decision)
@@ -185,6 +185,7 @@ class CuriosityEngineNode(Node):
         decision_msg.novel_features = list(calc_result['novel_features'])
         decision_msg.duplicated_features = list(calc_result['duplicated_features'])
         decision_msg.compared_record_count = int(memory.compared_record_count)
+        decision_msg.visit_count = int(memory.visit_count)
         decision_msg.evaluated_at = self.get_clock().now().to_msg()
 
         response.success = True

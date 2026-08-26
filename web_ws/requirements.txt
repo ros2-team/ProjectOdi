@@ -1,7 +1,9 @@
 flask>=3.0
 flask-sock>=0.7
 
-# 2단계 이후
+# 지도 변환 (OccupancyGrid -> PNG)
+pillow>=9.0
+numpy>=1.21
+
+# 3단계 이후
 # mysql-connector-python>=8.0   # DB 조회
-# pillow>=10.0                  # OccupancyGrid -> PNG
-# numpy>=1.24

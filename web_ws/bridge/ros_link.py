@@ -33,8 +33,6 @@ app 을 import 하지 않는다 — 이 파일은 웹이 존재하는지도 모�
 #   CuriosityDecision   →  ② "처음 보는 물체예요"   판단 결과
 #   ObservationResult   →  ③ "관찰 완료"            대표 사진 + 요약
 #
-#   위 셋은 원래 액션 result / 서비스 응답이라 브리지가 직접 못 받는다.
-#   미션 노드가 토픽으로 재발행해 줘야 한다. (docs/토픽요청.md 참조)
 # ════════════════════════════════════════════════════════════
 
 import threading
@@ -42,9 +40,10 @@ import time
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (DurabilityPolicy, QoSProfile, ReliabilityPolicy,
+                       qos_profile_sensor_data)
 
-from nav_msgs.msg import Odometry
+from nav_msgs.msg import OccupancyGrid, Odometry
 from sensor_msgs.msg import BatteryState, CompressedImage
 
 from odi_interfaces.msg import (
@@ -57,9 +56,10 @@ from odi_interfaces.msg import (
 )
 
 import config
-from bridge import frames, state
+from bridge import frames, mapper, state
 
 MEDIA_DIR = config.STATIC_DIR / "media"
+MAP_PNG = MEDIA_DIR / "map.png"
 
 
 def to_web_path(fs_path):
@@ -69,6 +69,8 @@ def to_web_path(fs_path):
 
     브라우저는 로봇의 파일시스템을 직접 못 읽는다.
     웹서버가 중계해야 하므로 /media/... 형태로 바꿔줘야 한다.
+
+    폴더 규칙이 정해지면 config.PHOTO_ROOT 를 맞추면 된다.
     """
     if not fs_path:
         return None
@@ -105,8 +107,15 @@ class OdiBridgeNode(Node):
         (MEDIA_DIR / "obs").mkdir(exist_ok=True)
 
         self._disk_last = 0.0
-        self._path = []
+        self._path = []                 # 지나온 좌표 [(x, y), …] 세상 좌표(미터)
+        self._pose = None               # 지금 위치 (x, y)
+        self._markers = []              # 발견 위치 [(x, y, action), …]
         self._exploring_since = None    # EXPLORING 진입 시각 → 경과 시간 계산
+
+        # 지도
+        self._map_msg = None            # 마지막으로 받은 OccupancyGrid
+        self._map_seq = 0               # PNG 를 다시 만들 때마다 +1
+        self._map_last = 0.0            # 마지막 변환 시각 (스로틀용)
 
         # ── 센서 ────────────────────────────────────────────
         # ★ QoS 가 맞아야 붙는다.
@@ -120,6 +129,14 @@ class OdiBridgeNode(Node):
         self.create_subscription(
             BatteryState, config.TOPIC_BATTERY,
             self.on_battery, qos_profile_sensor_data)
+
+        # ★ QoS 를 기본값(VOLATILE)으로 둔다.
+        #   TRANSIENT_LOCAL 로 요구하면 VOLATILE 퍼블리셔와 호환이 안 돼서
+        #   연결 자체가 안 된다. 에러도 없이 조용히 아무것도 안 온다.
+        #   VOLATILE 구독자는 양쪽 다 붙을 수 있다.
+        #   cartographer 는 지도를 주기적으로 다시 쏘므로 놓쳐도 곧 받는다.
+        self.create_subscription(
+            OccupancyGrid, config.TOPIC_MAP, self.on_map, 10)
 
         # ── 미션 ────────────────────────────────────────────
         self.create_subscription(
@@ -166,11 +183,24 @@ class OdiBridgeNode(Node):
         state.patch(camera={"live": True, "at": time.strftime("%H:%M:%S")})
 
     def on_odom(self, msg):
-        """5 단계에서 지도 위 경로선으로 쓴다. 지금은 쌓아만 둔다."""
+        """로봇 위치. 지도 위의 경로선과 현재 위치 점이 여기서 나온다.
+
+        Odometry 구조가 깊다:
+            msg.pose.pose.position.x
+                 └ PoseWithCovariance
+                      └ Pose
+                           └ Point
+        """
         p = msg.pose.pose.position
+        self._pose = (p.x, p.y)
+
+        # ★ 5cm 이상 움직였을 때만 기록한다.
+        #   /odom 은 초당 수십 번 온다. 전부 저장하면 1 분에 수천 점이 되고,
+        #   그걸 선으로 그리면 뭉개진 덩어리가 된다.
         if not self._path or (abs(p.x - self._path[-1][0]) > 0.05 or
                               abs(p.y - self._path[-1][1]) > 0.05):
             self._path.append((p.x, p.y))
+            # 그래도 길어지면 홀수 번째만 남긴다 ([::2] = 2칸씩 건너뛰기)
             if len(self._path) > 2000:
                 self._path = self._path[::2]
 
@@ -192,8 +222,9 @@ class OdiBridgeNode(Node):
             REFLECTING → "일기 쓰는 중"
             COMPLETED  → 일기 화면으로 전환
 
-        msg.detail 에 JSON 이 들어오면 의욕과 session_id 를 꺼낸다.
-        (메시지 수정 없이 값을 실어보내는 방법 — docs/토픽요청.md 5절)
+        ★ msg.detail 에 JSON 이 들어오면 의욕과 session_id 를 꺼낸다.
+          MissionState 에 motivation 필드가 없어서 쓰는 방법이다.
+          이 블록이 없으면 게이지가 100% 에 고정된다.
         """
         prev = state.snapshot()["mission"]
         state.patch(mission=msg.state)
@@ -209,11 +240,11 @@ class OdiBridgeNode(Node):
             except Exception:
                 pass    # detail 이 JSON 이 아니면 그냥 무시한다
 
-        # EXPLORING 에 처음 진입하면 시계를 켠다
+        # EXPLORING 으로 '들어오는 순간' 시계를 새로 켠다.
+        # 이미 값이 있어도 덮어쓴다 — 새 탐험이 시작된 것이므로.
         if msg.state == "EXPLORING" and prev != "EXPLORING":
-            if self._exploring_since is None:
-                self._exploring_since = time.time()
-        elif msg.state in ("IDLE", "PREPARING"):
+            self._exploring_since = time.time()
+        elif msg.state in ("IDLE", "PREPARING", "COMPLETED"):
             self._exploring_since = None
 
     def on_behavior(self, msg):
@@ -223,6 +254,7 @@ class OdiBridgeNode(Node):
             FIRST_ENCOUNTER → "처음 보는 물체 앞에 섰어요"
 
         msg.detail / msg.status 는 지금 쓰지 않는다.
+        (필요해지면 상단 작은 글씨로 붙일 수 있다)
         """
         state.patch(behavior=msg.behavior)
 
@@ -236,8 +268,41 @@ class OdiBridgeNode(Node):
         names = [o.class_name for o in msg.objects]
         state.patch(queue=names[1:] if len(names) > 1 else [])
 
+    def on_map(self, msg):
+        """SLAM 지도. 메시지만 받아두고 변환은 타이머에서 한다."""
+        if self._map_msg is None:
+            self.get_logger().info(
+                f"지도 수신 시작 {msg.info.width}x{msg.info.height} "
+                f"res={msg.info.resolution}")
+        self._map_msg = msg
+
+    def render_map(self):
+        """OccupancyGrid → PNG + 좌표 변환. on_tick 이 주기적으로 부른다."""
+        if self._map_msg is None:
+            return
+
+        now = time.time()
+        if now - self._map_last < config.MAP_THROTTLE_SEC:
+            return
+        self._map_last = now
+
+        try:
+            view = mapper.render(self._map_msg, MAP_PNG)
+        except Exception as e:
+            self.get_logger().error(f"지도 변환 실패: {e}")
+            return
+
+        if view is None:
+            return              # 아직 아무 데도 안 가봤다
+
+        self._map_seq += 1
+        state.patch(map=mapper.build_state(
+            view, self._map_seq, self._path, self._pose, self._markers))
+
     def on_tick(self):
         """경과 시간. MissionState 에 시간 필드가 없어서 브리지가 센다."""
+        self.render_map()
+
         if self._exploring_since is None:
             return
         with state.LOCK:
@@ -265,11 +330,22 @@ class OdiBridgeNode(Node):
             "label": label_to_dict(msg.label),
             "decision": None,
         }
+        # 지도에 찍을 발견 위치. 지금 로봇이 서 있는 자리를 쓴다.
+        if self._pose:
+            self._markers.append((self._pose[0], self._pose[1], "PENDING"))
+
         fields = {k: v for k, v in item.items() if k != "detection_id"}
         if not state.update_discovery(msg.detection_id, **fields):
             state.add_discovery(item)
 
     def on_decision(self, msg):
+
+        # 마지막 발견 마커의 판단 결과를 채운다.
+        # OBSERVE 는 주황 큰 점, IGNORE 는 회색 작은 점으로 그려진다.
+        if self._markers and self._markers[-1][2] == "PENDING":
+            x, y, _ = self._markers[-1]
+            self._markers[-1] = (x, y, msg.action)
+            
         """② CuriosityDecision — 호기심 판단이 끝났다.
 
         이 필드들로 화면 문장이 생성된다 (static/js/schema.js 의 describe).
@@ -278,7 +354,7 @@ class OdiBridgeNode(Node):
             novel = [object_condition]          → "전에도 봤는데 상태가 달라요"
             compared_record_count = 0           → "이런 건 굳이 안 봐도 돼요"
 
-        ★ visit_count 가 .msg 에 없으면 getattr 이 0 을 돌려주고
+        ★ visit_count 가 .msg 에 없으면 아래 getattr 이 0 을 돌려주고
           화면에 "0번째 보는 거예요"가 뜬다. 필드 추가가 필요하다.
         """
         decision = {
@@ -292,7 +368,7 @@ class OdiBridgeNode(Node):
         }
 
         # EncounterResult 가 먼저 왔으면 갱신, 순서가 뒤집혔으면 새로 만든다.
-        # (ROS 는 토픽 간 도착 순서를 보장하지 않는다)
+        # (ROS 는 토픽 간 순서를 보장하지 않는다)
         if not state.update_discovery(msg.detection_id, decision=decision):
             state.add_discovery({
                 "detection_id": msg.detection_id,
@@ -324,7 +400,8 @@ class OdiBridgeNode(Node):
             label=label_to_dict(msg.detailed_label),   # 관찰 후 더 자세해진 라벨
         )
 
-        # 관찰 개수는 브리지가 직접 센다. 로봇이 따로 보낼 필요가 없다.
+        # 관찰 개수는 브리지가 직접 센다.
+        # 로봇이 따로 보내줄 필요가 없다.
         snap = state.snapshot()
         done = sum(1 for d in snap["discoveries"] if d.get("observed"))
         state.patch(observed_count=done)

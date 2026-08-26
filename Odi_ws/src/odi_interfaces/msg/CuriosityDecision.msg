@@ -11,4 +11,6 @@ string[] novel_features
 string[] duplicated_features
 
 int32 compared_record_count
+int32 visit_count
+
 builtin_interfaces/Time evaluated_at

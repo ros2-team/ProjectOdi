@@ -22,6 +22,24 @@ ros_link / db / fake 를 import 하지 않는다.
 세 개가 서로 독립적이다. 하나가 느려도 나머지에 영향이 없다.
 """
 
+# ┌─ 연결 지도 ────────────────────────────────────────────────
+# │ import 하는 것 :
+# │     config                        설정값
+# │     bridge.state                  로봇 상태 (읽기만)
+# │     bridge.frames                 카메라 사진 (읽기만)
+# │     bridge.diary_fake             일기 데이터
+# │                                   ↑ DB 생기면 bridge.db 로 교체
+# │
+# │ ★ ros_link / fake 를 import 하지 않는다.
+# │   그래서 ROS 가 없어도 이 파일은 그대로 돌아간다.
+# │
+# │ 브라우저에게 넘겨주는 파일 :
+# │     GET /               → static/index.html
+# │     GET /diary, /diary/3 → static/diary.html
+# │     GET /css/*, /js/*    → static/css, static/js
+# │     GET /media/*         → static/media
+# └────────────────────────────────────────────────────────────
+
 import json
 import time
 
@@ -215,13 +233,30 @@ def create_app():
 
     @app.post("/sessions")
     def start_session():
+        """탐험 시작 요청.
+
+        ★ 아직 스텁이다.
+          진짜로는 여기서 Explore 액션에 goal 을 보내야 한다 (4단계).
+          지금은 상태만 초기화하고, 로봇이 MissionState 를 보고하기를 기다린다.
+
+          상태의 주인은 로봇이므로 여기서 mission 을 EXPLORING 으로
+          바꾸지 않는다. 로봇이 실제로 못 뜨면 화면만 거짓말하게 된다.
+        """
         s = state.snapshot()
         if s["mission"] not in ("IDLE", "COMPLETED"):
             # 이미 탐험 중이면 거절한다.
             # 이게 없으면 데모 때 버튼이 두 번 눌려서 세션이 꼬인다.
             # 409 Conflict = "지금 상태에서는 그 요청을 처리할 수 없다"
             return jsonify(error="already exploring"), 409
+
         state.reset()
+        state.patch(mission="PREPARING")
+
+        # 가짜 모드에서는 시나리오를 처음부터 다시 돌린다.
+        if config.USE_FAKE:
+            from bridge import fake
+            fake.restart()
+
         return jsonify(session_id=1), 201   # 201 Created
 
     # ════════════════════════════════════════════════════════
