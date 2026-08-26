@@ -1,11 +1,15 @@
+
+import uuid
 from enum import Enum
 
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-from odi_interfaces.msg import MissionState
-from odi_interfaces.msg import BehaviorEvent
+from odi_interfaces.msg import (
+    MissionState,
+    BehaviorEvent,
+)
 
 
 class MissionStatus(str, Enum):
@@ -24,6 +28,11 @@ class MissionManagerNode(Node):
         super().__init__("mission_manager_node")
 
         self.current_state = MissionStatus.IDLE
+        self.session_id = ''
+        self.current_detail = 'Odi is waiting for order'
+        self.state_updated_at = (
+            self.get_clock().now().to_msg()
+        )
 
         self.command_subscriber = self.create_subscription(
             String,
@@ -31,20 +40,17 @@ class MissionManagerNode(Node):
             self.command_callback,
             10,
         )
-
         self.behavior_event_subscriber = self.create_subscription(
             BehaviorEvent,
             "/behavior/event",
             self.behavior_event_callback,
             10,
         )
-
         self.state_publisher = self.create_publisher(
             MissionState,
             "/mission/state",
             10,
         )
-
         self.state_timer = self.create_timer(
             1.0,
             self.publish_current_state,
@@ -53,8 +59,10 @@ class MissionManagerNode(Node):
         # 준비 과정을 임시로 타이머로 대체를 위한 변수임
         self.preparing_timer = None
         #-----
+
         self.get_logger().info("Mission Manager Node is Running.")
-        self.publish_state("Odi is waitting for order.....")
+        self.publish_state()
+
 
     def command_callback(self, msg: String) -> None:
         command = msg.data.strip().upper()
@@ -87,6 +95,12 @@ class MissionManagerNode(Node):
                 f"Current State = {self.current_state.value}"
             )
             return
+
+        self.session_id = str(uuid.uuid4())
+
+        self.get_logger().info(
+            f"\n New mission session created : {self.session_id}"
+        )
 
         self.change_status(
             MissionStatus.PREPARING,
@@ -231,9 +245,15 @@ class MissionManagerNode(Node):
             )
             return
 
+        completed_session_id = self.session_id
+        self.session_id = ''
+
         self.change_status(
             MissionStatus.IDLE,
             "Mission reset completed",
+        )
+        self.get_logger().info(
+            f"\n Mission session cleard : {completed_session_id}"
         )
 
 
@@ -283,26 +303,31 @@ class MissionManagerNode(Node):
     ) -> None:
 
         previous_state = self.current_state
+
         self.current_state = next_state
+        self.current_detail = detail
+        self.state_updated_at = self.get_clock().now().to_msg()
 
         self.get_logger().info(
-            f"\n::MissionStatus updated::\n"
-            f"{previous_state.value} -> {next_state.value}"
+            f"\n :: MissionStatus updated :: "
+            f"\n {previous_state.value} -> {next_state.value}"
         )
-        self.publish_state(detail)
+
+        self.publish_state()
+
 
     def publish_current_state(self) -> None:
-        self.publish_state(
-            f"Current Mission State : {self.current_state.value}"
-        )
+        self.publish_state()
 
-    def publish_state(self, detail:str) -> None:
-        msg = MissionState()
-        msg.state = self.current_state.value
-        msg.detail = detail
-        msg.updated_at = self.get_clock().now().to_msg()
+    def publish_state(self) -> None:
+        message = MissionState()
 
-        self.state_publisher.publish(msg)
+        message.session_id = self.session_id
+        message.state = self.current_state.value
+        message.detail = self.current_detail
+        message.updated_at = self.state_updated_at
+
+        self.state_publisher.publish(message)
 
 def main(args = None) -> None:
     rclpy.init(args=args)
