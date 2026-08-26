@@ -1,0 +1,10 @@
+
+string reason
+---
+bool success
+string message
+---
+string stage
+float32 progress
+string message
+
