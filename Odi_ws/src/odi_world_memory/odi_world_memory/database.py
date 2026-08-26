@@ -428,8 +428,8 @@ class Database:
                         status = VALUES(status),
                         detail = VALUES(detail),
                         completed_at = COALESCE(
-                            VALUES(completed_at),
-                            completed_at
+                            completed_at,
+                            VALUES(completed_at)
                         ),
                         updated_at = VALUES(updated_at)
                     """,
