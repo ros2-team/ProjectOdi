@@ -1,0 +1,6 @@
+
+string session_id
+---
+bool success
+odi_interfaces/StoredObservation[] observations
+string message
