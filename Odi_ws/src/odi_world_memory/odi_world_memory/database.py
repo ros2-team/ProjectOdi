@@ -269,4 +269,74 @@ class Database:
         finally:
             connection.close()
 
+    def get_similar_observations(
+            self,
+            object_name,
+            max_results,
+    ):
+
+        connection = self.connect()
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        memory_id,
+                        session_id,
+                        detection_id,
+                        success,
+
+                        object_name,
+                        object_primary_color,
+                        object_secondary_color,
+                        object_material,
+                        object_shape,
+                        object_condition,
+                        object_special_features,
+                        raw_json,
+
+                        image_paths,
+                        representative_image_path,
+                        diary_summary,
+
+                        started_at,
+                        completed_at,
+                        stored_at,
+                        failure_reason
+
+                    FROM observations
+                    WHERE object_name = %s
+                    ORDER BY stored_at DESC
+                    LIMIT %s
+                    """,
+                    (
+                        object_name,
+                        max_results,
+                    ),
+                )
+
+                records = cursor.fetchall()
+
+            for record in records:
+                special_features = record['object_special_features']
+                image_paths = record['image_paths']
+
+                record['object_special_features'] = (
+                    json.loads(special_features)
+                    if special_features
+                    else []
+                )
+                record['image_paths'] = (
+                    json.loads(image_paths)
+                    if image_paths
+                    else []
+                )
+
+            return records
+
+        finally:
+            connection.close()
+
+
 

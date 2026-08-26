@@ -42,6 +42,12 @@ class WorldMemoryNode(Node):
             self.get_mission_observations_callback,
             callback_group = self.callback_group,
         )
+        self.get_similar_observation_service = self.create_service(
+            GetSimilarObservations,
+            '/world_memory/get_similar_observations',
+            self.get_similar_observation_callback,
+            callback_group = self.callback_group,
+        )
 
     def save_observation_callback(
             self,
@@ -130,6 +136,64 @@ class WorldMemoryNode(Node):
             response.success = False
             response.observations = []
             response.message = f'Database error : {error}'
+            self.get_logger().error(response.message)
+
+        return response
+
+    def get_similar_observation_callback(
+            self,
+            request,
+            response,
+    ):
+        encounter = request.encounter
+
+        if not encounter.success:
+            response.success = False
+            response.message = "Encounter result was not successful"
+            return response
+
+        if not encounter.label.object_name:
+            response.success = False
+            response.message = "object_name is empty"
+
+        max_results = request.max_results
+
+        if max_results <= 0:
+            max_results = 20
+        elif max_results > 100:
+            max_results = 100
+
+        try:
+            records = self.database.get_similar_observations(
+                encounter.label.object_name,
+                max_results,
+            )
+
+            response.observations = [
+                self.record_to_stored_observation(record)
+                for record in records
+            ]
+
+            response.success = True
+
+            if records:
+                response.message = (
+                    f'{len(records)} similar observation(s) found'
+                )
+            else:
+                response.message = (
+                    'No similar observations found'
+                )
+            self.get_logger().info(
+                f'similar observations requested : '
+                f'object = {encounter.label.object_name}, count = {len(records)}'
+            )
+
+        except Exception as error:
+            response.success = False
+            response.observations = []
+            response.message = f'Database error : {error}'
+
             self.get_logger().error(response.message)
 
         return response
