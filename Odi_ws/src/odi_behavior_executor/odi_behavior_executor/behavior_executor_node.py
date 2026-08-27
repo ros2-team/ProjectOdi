@@ -166,9 +166,24 @@ class BehaviorExecutorNode(Node):
         self,
         msg:MissionState,
     ) -> None:
-        # mission manager 의 상태를 blackboard에 저장한다.
+
         previous_state = self.blackboard.mission_state
+        previous_session_id = self.blackboard.session_id
+
         self.blackboard.mission_state = msg.state
+        self.blackboard.session_id = msg.session_id
+
+        if previous_session_id != msg.session_id:
+            self.get_logger().info(
+                f"\n :: Mission session updated ::"
+                f"\n {previous_session_id or 'EMPTY'} -> {msg.session_id or 'EMPTY'}"
+            )
+
+        if msg.state != 'IDLE' and not msg.session_id:
+            self.get_logger().warning(
+                f"\n :: MissionState has no session_id ::"
+                f"\n state = {msg.state}"
+            )
 
         if previous_state == msg.state:
             return
@@ -495,16 +510,24 @@ class BehaviorExecutorNode(Node):
     def start_exploration(self) -> None:
         if self.exploration_goal_active:
             return
+
         if self.blackboard.exploration_paused:
             return
+
+        if not self.blackboard.session_id:
+            self.get_logger().error(
+                "\n Cannot start exploration : session_id is empty"
+            )
+            return
+
         if not self.exploration_action_client.server_is_ready():
             self.get_logger().warning(
-                "Exploration action server is not ready"
+                "\n Exploration action server is not ready"
             )
             return
 
         goal_msg = Explore.Goal()
-        goal_msg.session_id = "odi_exploration"
+        goal_msg.session_id = self.blackboard.session_id
         goal_msg.mode = self.exploration_mode
 
         self.exploration_goal_active = True
@@ -1108,6 +1131,15 @@ class BehaviorExecutorNode(Node):
         if self.observation_goal_active:
             return
 
+        if not self.blackboard.session_id:
+            self.get_logger().error(
+                "\n Cannot start observation : session_id is empty"
+            )
+            self.blackboard.current_stage = (
+                ObjectProcessStage.FAILED
+            )
+            return
+
         encounter_result = self.blackboard.encounter_result
         curiosity_decision = self.blackboard.curiosity_decision
 
@@ -1136,6 +1168,7 @@ class BehaviorExecutorNode(Node):
             return
 
         goal_msg = ObserveObject.Goal()
+        goal_msg.session_id = self.blackboard.session_id
         goal_msg.encounter = encounter_result
         goal_msg.decision = curiosity_decision
 
@@ -1143,6 +1176,7 @@ class BehaviorExecutorNode(Node):
 
         self.get_logger().info(
             "\n::Observation goal requested::\n"
+            f"session_id = {goal_msg.session_id}\n"
             f"detection_id = {encounter_result.detection_id}\n"
             f"object_name = {encounter_result.label.object_name}"
         )
@@ -1560,6 +1594,12 @@ class BehaviorExecutorNode(Node):
         if self.reflection_goal_active:
             return
 
+        if not self.blackboard.session_id:
+            self.get_logger().error(
+                "Cannot start reflection : session_id is empty"
+            )
+            return
+
         if not self.reflection_action_client.server_is_ready():
             self.get_logger().warning(
                 "Reflect action server is not ready"
@@ -1567,7 +1607,7 @@ class BehaviorExecutorNode(Node):
             return
 
         goal_msg = Reflect.Goal()
-        goal_msg.session_id = "odi_exploration"
+        goal_msg.session_id = self.blackboard.session_id
 
         self.reflection_goal_active = True
         self.blackboard.reflection_active = True

@@ -29,7 +29,8 @@ class ObjectProcessStage(str, Enum):
 class OdiBlackboard:
 
     # Mission status
-    mission_state:str = "IDLE"
+    mission_state: str = "IDLE"
+    session_id: str = ""
 
     # System status
     emergency: bool = False
@@ -69,6 +70,8 @@ class OdiBlackboard:
     reflection_completed: bool = False
 
     def reset(self) -> None:
+        self.session_id = ""
+
         self.emergency = False
         self.battery_low = False
         self.system_ready = False
