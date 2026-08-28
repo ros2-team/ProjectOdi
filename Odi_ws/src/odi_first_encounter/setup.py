@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'first_encounter'
+package_name = 'odi_first_encounter'
 
 setup(
     name=package_name,
@@ -30,13 +30,13 @@ setup(
         'console_scripts': [
             (
                 'first_encounter_node = '
-                'first_encounter.first_encounter_node:main'
+                'odi_first_encounter.first_encounter_node:main'
             ),
             (
                 'vlm_node = '
-                'first_encounter.first_encounter_node:main'
+                'odi_first_encounter.first_encounter_node:main'
             ),
-            'yolo_node = first_encounter.yolo_node:main',
+            'yolo_node = odi_first_encounter.yolo_node:main',
         ],
     },
 )

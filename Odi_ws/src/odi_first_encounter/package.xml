@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>first_encounter</name>
+  <name>odi_first_encounter</name>
   <version>0.1.0</version>
   <description>OpenAI-powered first encounter action server for ODI.</description>
   <maintainer email="ehrud2235@naver.com">kim</maintainer>
