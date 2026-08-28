@@ -1,7 +1,7 @@
 class ObjectCandidate:
     """
-    현재 인지된 객체 정보.
-    Perception → Curiosity Engine으로 전달되는 실시간 객체 데이터.
+    현재 조우한 객체 정보.
+    EncounterResult.label → Curiosity Engine으로 전달되는 데이터.
     """
 
     def __init__(
@@ -11,7 +11,8 @@ class ObjectCandidate:
         secondary_color: str = '',
         material: str = '',
         shape: str = '',
-        condition: str = ''
+        condition: str = '',
+        special_features=None
     ):
         self.object_name = object_name
         self.primary_color = primary_color
@@ -19,6 +20,7 @@ class ObjectCandidate:
         self.material = material
         self.shape = shape
         self.condition = condition
+        self.special_features = list(special_features or [])
 
     def __repr__(self):
         return (
@@ -35,10 +37,6 @@ class MemoryInfo:
     is_new=False 인 경우 색/상태 필드에는
     '같은 개체의 가장 최근 기록' 값이 들어간다.
     change 계산이 이 값을 기준으로 이뤄지기 때문이다.
-
-    similarity / compared_record_count 는 예전에 노드에서
-    나중에 붙이는 방식이었는데, 한 경로라도 빠뜨리면
-    AttributeError로 서비스가 죽으므로 생성자로 옮겼다.
     """
 
     def __init__(
@@ -51,9 +49,10 @@ class MemoryInfo:
         material: str = '',
         shape: str = '',
         condition: str = '',
+        special_features=None,
         similarity: float = 0.0,
         compared_record_count: int = 0,
-        record_id=None
+        memory_id: str = ''
     ):
         self.visit_count = visit_count
         self.is_new = is_new
@@ -63,12 +62,13 @@ class MemoryInfo:
         self.material = material
         self.shape = shape
         self.condition = condition
+        self.special_features = list(special_features or [])
         self.similarity = similarity
         self.compared_record_count = compared_record_count
-        self.record_id = record_id   # 매칭된 DB 행 id (추적/디버깅용)
+        self.memory_id = memory_id   # World Memory의 기록 id (추적용)
 
     def __repr__(self):
         return (
             f'MemoryInfo(new={self.is_new}, visits={self.visit_count}, '
-            f'sim={self.similarity:.2f}, id={self.record_id})'
+            f'sim={self.similarity:.2f}, memory_id={self.memory_id})'
         )

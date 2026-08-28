@@ -2,128 +2,160 @@ from . import weights as W
 
 
 # ============================================================
-# 1. 단어 정돈하기 (글자 모양 맞춰주기)
+# 값 정규화 유틸
 # ============================================================
-# AI가 물건을 보고 "Red", "red ", "RED"처럼 제각각으로 말하면
-# 컴퓨터는 다 다른 말인 줄 알고 헷갈려 합니다.
-# 비어있거나 뜻이 없는 단어들('-'나 'unknown' 같은 것들)을 모아둡니다.
+# AI가 돌려주는 값은 "Red" / "red " / "NORMAL" 처럼 표기가 흔들린다.
+# 정규화 없이 == 로 비교하면 같은 물건을 매번 신규로 판정하게 된다.
+
 _NULL_TOKENS = ('', 'none', 'null', 'unknown', 'n/a', 'na', '-')
 
 
 def normalize(value):
-    """
-    글자를 깔끔하게 정리하는 장치입니다.
-    대문자는 소문자로 바꾸고, 쓸데없는 공백을 지웁니다.
-    비어있는 값이면 "없음(None)"으로 통일합니다.
-    """
+    """비교용 정규화. 값이 없으면 None을 반환한다."""
     if value is None:
         return None
-    
-    # 양쪽 공백을 깎아내고 모두 소문자로 바꿉니다. (예: " Red " -> "red")
     text = str(value).strip().lower()
-    
-    # 아무 의미 없는 단어라면 없음(None)으로 정돈합니다.
     if text in _NULL_TOKENS:
         return None
     return text
 
 
+def normalize_features(values):
+    """
+    특징 리스트(object_special_features)를 집합으로 정규화한다.
+    예) ["손잡이 있음", "파란 무늬"] -> {"손잡이 있음", "파란 무늬"}
+    비어 있으면 None (= 비교 불가)
+    """
+    if not values:
+        return None
+    items = {
+        normalize(v)
+        for v in values
+        if normalize(v) is not None
+    }
+    return items or None
+
+
 class CuriosityCalculator:
     """
-    [로봇의 호기심 점수 계산기]
+    호기심 점수 및 객체 유사도 계산 담당.
 
-    로봇은 다음 두 가지 경우에 호기심을 느낍니다.
-    1. "완전히 처음 보는 물건이다!" (새로움, Novelty)
-    2. "내가 알던 장난감인데 색깔이나 상태가 바뀌었다!" (변화, Change)
+    최종 수식
+        novelty_raw = is_new ? BASE + (1-BASE)*(1-sim) : (1 - sim)
+        change_raw  = 변화있음 ? BASE + (1-BASE)*ratio : 0
+        decay       = 1 / (1 + VISIT_DECAY * visit_count)
 
-    그리고 자주 본 물건은 점차 질리게 됩니다. (익숙함 감쇠, Decay)
+        N = W_NOVELTY * novelty_raw * decay
+        C = W_CHANGE  * change_raw
+        score = 1 - (1-N)*(1-C)          # noisy-OR (합집합)
+
+    가중합이 아니라 noisy-OR인 이유:
+        "처음 봐서 궁금하다" 와 "알던 게 변해서 궁금하다" 는
+        둘 중 하나만 성립해도 충분히 궁금한 사건이다.
+        평균을 내면 한쪽이 0일 때 점수가 반토막 난다.
     """
 
     # ============================================================
-    # 1. 유사도 비교 — 지금 본 물건 vs 장난감 상자(DB) 속 물건
+    # 1. Similarity — 현재 객체 vs 과거 기록
     # ============================================================
 
     def compare(self, candidate, record):
         """
-        지금 본 물건(candidate)과 예전에 본 기록(record)의 특징을 하나씩 비교합니다.
-        
-        [규칙] 한쪽이라도 정보가 없으면 비교하지 않고 넘어갑니다.
-        확실하게 같다는 증거가 있을 때만 점수를 줍니다.
+        World Memory가 object_name이 같은 기록만 돌려주므로
+        여기서 이름은 비교하지 않는다. 색/재질/형태/상태/특징만 본다.
 
-        반환값: (닮은 비율, 같은 특징 목록, 다른 특징 목록)
+        NULL 처리 방침: 비교 대상에서 제외하고 분모를 재정규화한다.
+            1차 조우는 material/condition이 비어 올 수 있고
+            과거 기록은 정밀 관찰 결과라 값이 다 채워져 있다.
+            빈 값을 불일치로 세면 같은 물체인데도 유사도가
+            임계값을 넘지 못해 매번 신규로 판정된다.
+
+        반환: (similarity, matched, mismatched)
         """
-        score = 0.0          # 맞춘 점수
-        total_weight = 0.0  # 비교할 수 있었던 총 중요도 합계
-        matched = []        # 서로 같았던 특징들
-        mismatched = []     # 서로 달랐던 특징들
+        score = 0.0
+        total_weight = 0.0      # 실제로 비교 가능했던 가중치 합
+        matched = []
+        mismatched = []
 
-        # 색상, 모양, 재질 등 각 특징별로 순서대로 비교합니다.
         for attr, weight in W.SIM_WEIGHTS.items():
+            if attr == 'special_features':
+                a = normalize_features(getattr(candidate, attr, None))
+                b = normalize_features(getattr(record, attr, None))
+                if a is None or b is None:
+                    continue
+                total_weight += weight
+                # 특징은 부분 일치를 인정한다 (자카드 유사도)
+                overlap = len(a & b) / len(a | b)
+                score += weight * overlap
+                if overlap >= 0.5:
+                    matched.append(attr)
+                else:
+                    mismatched.append(attr)
+                continue
+
             a = normalize(getattr(candidate, attr, None))
             b = normalize(getattr(record, attr, None))
 
-            # 어느 한쪽이라도 정보가 비어있다면 정확히 비교할 수 없으므로 넘어갑니다.
+            # 한쪽이라도 비어 있으면 비교 불가 → 분모에서 제외
             if a is None or b is None:
                 continue
 
-            # 정상적으로 비교할 수 있는 특징들의 중요도를 더합니다.
             total_weight += weight
-            
-            # 두 특징이 똑같다면 점수를 얻습니다.
             if a == b:
                 score += weight
                 matched.append(attr)
             else:
                 mismatched.append(attr)
 
-        # 비교 가능했던 특징들을 기준으로 점수의 비율(0.0 ~ 1.0)을 만듭니다.
+        # 비교 가능했던 속성만으로 비율을 다시 맞춘다
         if total_weight > 0.0:
             score = score / total_weight
         else:
             score = 0.0
-            
-        # [안전장치] 이름 자체가 다르면 절대로 같은 물건일 수 없습니다.
-        # 모양이나 색이 비슷하다고 해서 '인형'과 '컵'을 같은 물건으로 착각하지 않게 상한선(Cap)을 둡니다.
-        if normalize(getattr(candidate, 'object_name', None)) != \
-           normalize(getattr(record, 'object_name', None)):
-            score = min(score, W.NAME_MISMATCH_CAP)
 
         return score, matched, mismatched
 
     def calculate_similarity(self, candidate, record):
-        """유사도 점수 숫자만 딱 필요할 때 쓰는 줄임표 함수입니다."""
+        """유사도 값만 필요할 때 쓰는 축약형."""
         similarity, _, _ = self.compare(candidate, record)
         return similarity
 
     # ============================================================
-    # 2. 새로움(Novelty) — 얼마나 처음 보는 물건인가?
+    # 2. Novelty — 얼마나 처음 보는가
     # ============================================================
 
     def calculate_novelty(self, memory):
         """
-        기억 속 물건과 얼마나 '달리 생겼는지' 거리(distance)로 참신함을 측정합니다.
-        닮은 정도(similarity)가 0.8이면, 다른 정도는 0.2가 됩니다.
-        """
-        # 점수가 0에서 1 사이를 벗어나지 않도록 안전하게 정돈합니다.
-        similarity = min(max(float(memory.similarity), 0.0), 1.0)
-        distance = 1.0 - similarity  # 닮지 않은 정도 (거리가 멀수록 처음 보는 것)
+        방문 횟수가 아니라 '가장 닮은 기억과의 거리'로 잰다.
 
-        # 아예 한 번도 본 적 없는 신규 개체(is_new)라면 기본 점수(BASE)를 보장해 줍니다.
+        is_new인 경우 BASE를 더하는 이유:
+            임계값 아래로 떨어져 '신규'로 판정됐다는 사실 자체가
+            이미 정보다. 과거 기록이 0건이면 similarity가 0이므로
+            novelty는 1.0이 된다.
+        """
+        similarity = min(max(float(memory.similarity), 0.0), 1.0)
+        distance = 1.0 - similarity
+
         if memory.is_new:
             return W.NOVELTY_BASE + (1.0 - W.NOVELTY_BASE) * distance
 
         return distance
 
     # ============================================================
-    # 3. 변화(Change) — 내가 알던 물건이 어떻게 달라졌는가?
+    # 3. Change — 알던 것이 얼마나 달라졌는가
     # ============================================================
 
     def calculate_change(self, candidate, memory):
         """
-        원래 알던 장난감인데 칠이 벗겨졌거나 찌그러졌는지 확인합니다.
-        이름이나 재질 같은 원래 속성은 빼고, '색상'이나 '상태' 같은 겉모습 변화만 살핍니다.
+        memory는 '같은 개체의 가장 최근 기록'이어야 한다.
+        (World Memory 응답이 stored_at DESC 정렬이므로 배열의 0번)
+
+        NULL 처리 방침: 비교 대상에서 제외하고 분모를 다시 맞춘다.
+            similarity와 정반대인데, 변화는 "증거가 없으면
+            변했다고 단정할 수 없다"가 맞기 때문이다.
+
+        반환: (change_raw, changed_attrs)
         """
-        # 처음 보는 물건이라면 '변화'라는 개념 자체가 성립하지 않습니다.
         if memory.is_new:
             return 0.0, []
 
@@ -131,62 +163,48 @@ class CuriosityCalculator:
         changed_weight = 0.0
         changed_attrs = []
 
-        # 상태 관련 특징들만 하나씩 꺼내어 비교합니다.
         for attr, weight in W.CHANGE_WEIGHTS.items():
             a = normalize(getattr(candidate, attr, None))
             b = normalize(getattr(memory, attr, None))
 
-            # 정보가 비어있다면 변했는지 알 수 없으므로 계산에서 뺍니다.
             if a is None or b is None:
-                continue
+                continue  # 비교 불가 → 제외
 
             total_weight += weight
-            # 값이 서로 다르면 '변했다'고 기록합니다.
             if a != b:
                 changed_weight += weight
                 changed_attrs.append(attr)
 
-        # 변한 게 없다면 변화 점수는 0점입니다.
         if total_weight <= 0.0 or changed_weight <= 0.0:
             return 0.0, []
 
-        # 전체 상태 대비 얼마나 변했는지 비율을 구합니다.
         ratio = changed_weight / total_weight
 
-        # 조금이라도 변했다면 그 사실 자체가 신기하므로 기본 점수(BASE)를 깔아줍니다.
+        # base + 비율: '변했다는 사실 자체'에 최소 점수를 보장한다.
         change_raw = W.CHANGE_BASE + (1.0 - W.CHANGE_BASE) * ratio
 
         return change_raw, changed_attrs
 
     # ============================================================
-    # 4. 최종 호기심 점수(Curiosity Score) 합치기
+    # 4. 최종 Curiosity Score
     # ============================================================
 
     def calculate_score(self, candidate, memory):
-        """
-        새로움 점수와 변화 점수를 종합하여 로봇의 최종 호기심 점수를 만듭니다.
-        """
         novelty_raw = self.calculate_novelty(memory)
         change_raw, changed_attrs = self.calculate_change(candidate, memory)
 
-        # [실증 감쇠] 여러 번 본 물건은 질립니다. (자주 볼수록 decay 값이 줄어듬)
-        # 단, '새로움'에만 적용하고 '변화'에는 적용하지 않습니다.
-        # 자주 본 장난감이라도 갑자기 색이 바뀌면 다시 신기해해야 하기 때문입니다.
+        # 익숙함 감쇠 — novelty에만 적용한다.
+        # change에 곱하면 자주 본 물건의 변화를 놓치게 된다.
         decay = 1.0 / (1.0 + W.VISIT_DECAY * float(memory.visit_count))
 
         novelty_term = W.W_NOVELTY * novelty_raw * decay
         change_term = W.W_CHANGE * change_raw
 
-        # [noisy-OR 확률 결합]
-        # 단순히 평균을 내면 "처음 본 신기함(100점)" + "변화 없음(0점)"일 때 50점으로 반토막 납니다.
-        # 둘 중 하나만 확실하게 터져도 호기심을 높게 유지하기 위해
-        # "두 사건 모두 안 신기할 확률을 1에서 빼는 수식"을 사용합니다.
+        # noisy-OR: 두 항 모두 흥미롭지 않을 확률의 여집합.
         score = 1.0 - (1.0 - novelty_term) * (1.0 - change_term)
 
-        # 어떤 부분이 같고 다른지 최종 정리를 합니다.
         _, matched, mismatched = self.compare(candidate, memory)
 
-        # 결과표를 만들어 돌려줍니다.
         return {
             'novelty': round(novelty_raw, 2),
             'change': round(change_raw, 2),
@@ -194,7 +212,7 @@ class CuriosityCalculator:
             'change_term': round(change_term, 2),
             'decay': round(decay, 2),
             'score': round(score, 2),
-            'changed_features': changed_attrs,      # 변한 부분들
-            'novel_features': mismatched,           # 새로 발견하거나 다른 부분들
-            'duplicated_features': matched,         # 예전과 똑같은 부분들
+            'changed_features': changed_attrs,
+            'novel_features': mismatched,
+            'duplicated_features': matched,
         }
