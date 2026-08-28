@@ -226,31 +226,60 @@ class BehaviorExecutorNode(Node):
                 "No valid detected objects"
             )
             return
-        valid_objects.sort(
-            key=lambda detected_object:
-                abs(detected_object.center_x),
+
+        selected_object = max(
+            valid_objects,
+            key=lambda detected_object: (
+                detected_object.width * detected_object.height,
+                detected_object.confidence,
+            ),
         )
+
         self.blackboard.detection_locked = True
         self.blackboard.exploration_paused = True
 
         self.cancel_exploration()
 
-        self.blackboard.pending_objects.extend(
-            valid_objects
+        self.blackboard.pending_objects.clear()
+        self.blackboard.pending_objects.append(
+            selected_object
         )
         self.get_logger().info(
-            "\n::Detected object batch received::\n"
-            f"{len(valid_objects)} object"
+            "\n :: Detected object selected ::"
+            f"\n detected_count = {len(valid_objects)}"
+            f"\n skipped_count = {len(valid_objects) - 1}"
+            f"\n id = {selected_object.detection_id}"
+            f"\n class = {selected_object.class_name}"
+            f"\n confidence = {selected_object.confidence:.2f}"
+            f"\n bbox_size = {selected_object.width} X {selected_object.height}"
         )
-
-        for detected_object in valid_objects:
-            self.get_logger().info(
-                "\n::Queued detected object::\n"
-                f"id = {detected_object.detection_id}\n"
-                f"class = {detected_object.class_name}\n"
-                f"confidence = {detected_object.confidence:.2f}"
-            )
         self.select_next_object()
+
+        # valid_objects.sort(
+        #     key=lambda detected_object:
+        #         abs(detected_object.center_x),
+        # )
+        # self.blackboard.detection_locked = True
+        # self.blackboard.exploration_paused = True
+
+        # self.cancel_exploration()
+
+        # self.blackboard.pending_objects.extend(
+        #     valid_objects
+        # )
+        # self.get_logger().info(
+        #     "\n::Detected object batch received::\n"
+        #     f"{len(valid_objects)} object"
+        # )
+
+        # for detected_object in valid_objects:
+        #     self.get_logger().info(
+        #         "\n::Queued detected object::\n"
+        #         f"id = {detected_object.detection_id}\n"
+        #         f"class = {detected_object.class_name}\n"
+        #         f"confidence = {detected_object.confidence:.2f}"
+        #     )
+        # self.select_next_object()
 
     def select_next_object(self) -> bool:
         self.get_logger().info(
@@ -305,10 +334,8 @@ class BehaviorExecutorNode(Node):
         self.blackboard.curiosity_decision = None
         self.blackboard.observation_result = None
 
-        if self.blackboard.pending_objects:
-            self.select_next_object()
-            return
 
+        self.blackboard.pending_objects.clear()
         self.finish_detection_batch()
 
     def finish_detection_batch(self) -> None:
