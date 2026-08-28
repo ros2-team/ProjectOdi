@@ -1,4 +1,9 @@
 
+import json
+import os
+
+from openai import OpenAI
+
 import rclpy
 from rclpy.action import (
     ActionServer,
@@ -33,7 +38,6 @@ class ReflectionNode(Node):
             '/world_memory/save_diary',
             callback_group = self.callback_group,
         )
-
         self.action_server = ActionServer(
             self,
             Reflect,
@@ -44,6 +48,27 @@ class ReflectionNode(Node):
             callback_group=self.callback_group,
         )
 
+        #openAI api
+        api_key = os.getenv("OPENAI_API_KEY")
+
+        if not api_key:
+            self.get_logger().error(
+                "OPENAI_API_KEY environment variable is missing"
+            )
+            raise RuntimeError(
+                "OPENAI_API_KEY environment variable is missing"
+            )
+
+        self.openai_model = os.getenv(
+            "ODI_OPENAI_MODEL",
+            "gpt-5.6-luna",
+        )
+        self.openai_client = OpenAI(
+            api_key = api_key,
+        )
+        self.get_logger().info(
+            f"OpenAI diary model : {self.openai_model}"
+        )
         self.get_logger().info(
             "Reflection Action Server is running"
         )
@@ -150,14 +175,14 @@ class ReflectionNode(Node):
             message='Generating exploration diary.',
         )
 
-        diary_text = self.generate_temporary_diary(
-            get_response.observations
-        )
-
-        if not diary_text:
+        try:
+            diary_text = self.generate_diary_with_openai(
+                get_response.observations
+            )
+        except Exception as error:
             return self.finish_failed_goal(
                 goal_handle,
-                'No successful observations were available.',
+                f"OpenAI diary generation failed : {error}"
             )
 
         if goal_handle.is_cancel_requested:
@@ -181,7 +206,7 @@ class ReflectionNode(Node):
         save_request = SaveDiary.Request()
         save_request.session_id = session_id
         save_request.diary_text = diary_text
-        save_request.model_name = 'temporary_template_v1'
+        save_request.model_name = self.openai_model
 
         try:
             save_response = await (
@@ -226,12 +251,11 @@ class ReflectionNode(Node):
 
         return result
 
-    def generate_temporary_diary(
+    def build_observation_data(
         self,
         stored_observations,
-    ) -> str:
-
-        diary_entries = []
+    ):
+        observation_data = []
 
         for stored_observation in stored_observations:
             observation = stored_observation.observation
@@ -239,55 +263,75 @@ class ReflectionNode(Node):
             if not observation.success:
                 continue
 
-            if observation.diary_summary.strip():
-                diary_entries.append(
-                    observation.diary_summary.strip()
-                )
-                continue
-
             label = observation.detailed_label
 
-            object_name = (
-                label.object_name.strip() or "이름을 알 수 없는 물체"
+            observation_data.append(
+                {
+                    'object_name' : label.object_name,
+                    'primary_color' : label.object_primary_color,
+                    'secondary_color' : label.object_secondary_color,
+                    'material' : label.object_material,
+                    'shape' : label.object_shape,
+                    'condition' : label.object_condition,
+                    'special_features' : list(
+                        label.object_special_features
+                    ),
+                    'observation_summary' : observation.diary_summary,
+                }
             )
-            features = []
+        return observation_data
 
-            if label.object_primary_color.strip():
-                features.append(
-                    label.object_primary_color.strip()
-                )
-
-            if label.object_material.strip():
-                features.append(
-                    label.object_material.strip()
-                )
-
-            if label.object_shape.strip():
-                features.append(
-                    label.object_shape.strip()
-                )
-
-            feature_text = ''.join(features)
-
-            if feature_text:
-                diary_entries.append(
-                    f"{feature_text} 특징을 가진 {object_name}을 발견했다."
-                )
-            else:
-                diary_entries.append(
-                    f"{object_name}을 발견하고 가까이서 관찰했다."
-                )
-
-        if not diary_entries:
-            return ''
-
-        return(
-            "오늘은 주변을 천천히 탐험하며 새로운 물체들을 관찰했다."
-            "새로운 물체를 관찰했다"
-            + " ".join(diary_entries)
-            + "새로운 것들을 살펴볼 수 있어서"
-            "흥미로운 탐험이었다."
+    def generate_diary_with_openai(
+        self,
+        stored_observations,
+    ):
+        observation_data = self.build_observation_data(
+            stored_observations
         )
+
+        if not observation_data:
+            raise RuntimeError(
+                "No successful observations were available"
+            )
+        observation_json = json.dumps(
+            observation_data,
+            ensure_ascii = False,
+            indent = 2,
+        )
+
+        instructions = (
+            "너는 귀여운 탐험 로봇 오디다."
+            "탐험 중 관찰한 기록을 바탕으로 오디의 시점에서 한국어 탐험 일기를 작성한다."
+            "제공된 관찰 사실만 사용하고 없는 사실은 만들지 않는다."
+            "따뜻하고 호기심 많은 말투로 3~6 문장을 작성한다."
+            "객체 ID, 데이터베이스, JSON, 인공지능 같은 기술 용어는 일기에 넣지 않는다."
+            "제목이나 목록 없이 일기 본문만 반환한다."
+        )
+
+        user_input = (
+            "다음은 이번 탐험에서 수집한 관찰 기록이다.\n\n"
+            f"{observation_json}\n\n"
+            "이 기록을 자연스럽게 연결해서 하나의 일기로 작성해줘."
+        )
+
+        response = self.openai_client.responses.create(
+            model = self.openai_model,
+            reasoning = {
+                'effort': 'low',
+            },
+            instructions = instructions,
+            input = user_input,
+            max_output_tokens = 2000,
+        )
+        diary_text = response.output_text.strip()
+
+        if not diary_text:
+            raise RuntimeError(
+                "OpenAI returned an empty diary"
+            )
+
+        return diary_text
+
 
     def publish_feedback(
         self,
