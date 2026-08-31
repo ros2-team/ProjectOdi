@@ -40,9 +40,8 @@ class YoloTestNode(Node):
         #
         # 돌려보면서 계속 추가할 것. 파인튜닝으로 class 늘리면 여기도 갱신.
         self.ignore_classes = {
-            'person',
             'chair', 'couch', 'bed', 'bench', 'dining table',
-            'tv', 'refrigerator', 'microwave', 'oven', 'sink', 'toilet',
+            'tv', 'refrigerator', 'microwave', 'oven', 'sink', 'toilet', 'person'
         }
 
         # y필터: bbox 아랫변이 이 값보다 위(작은 값)면 버린다.
@@ -104,7 +103,7 @@ class YoloTestNode(Node):
             return
 
         frame = self.bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
-        results = self.model(frame, conf=self.conf, verbose=False, device='cpu')
+        results = self.model(frame, conf=self.conf, verbose=False, device='cpu', imgsz = 320)
 
         # ---- 박스를 dict 로 정리하면서 걸러낸다 ----
         all_dets = []
