@@ -15,6 +15,7 @@ cd Odi_ws
 source /opt/ros/humble/setup.bash
 colcon build
 source install/setup.bash
+```
 
 # 🤖 ODi (오디) : 자율주행 탐험 반려로봇
 
