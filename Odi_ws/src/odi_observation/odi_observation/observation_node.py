@@ -14,7 +14,7 @@ import tf2_ros
 from tf2_geometry_msgs import do_transform_point
 from rclpy.qos import qos_profile_sensor_data
 
-class ObjectLocator(Node):
+class ObservationNode(Node):
     """
     bbox 픽셀 좌표 + LiDAR 거리 + TF 로
     물체의 map 좌표 (x, y) 를 추정한다.
@@ -22,13 +22,13 @@ class ObjectLocator(Node):
     """
 
     def __init__(self):
-        super().__init__('object_locator')
+        super().__init__('observation_node')
 
         # ================== 네가 채울 값 ==================
         self.scan_topic = '/scan'
         self.yolo_topic = '/observe/locate_request'
         self.approach_goal_topic = '/observe/approach_goal'
-        
+
         self.image_width = 320    # YOLO 에 들어가는 실제 이미지 가로 픽셀
         self.fx = 270.2           # bearing_probe 로 구한 값으로 교체할 것
         self.cx = 157.2           # image_width / 2
@@ -65,7 +65,7 @@ class ObjectLocator(Node):
         # self.create_timer(2.0, self.test_tick)
         # self.get_logger().info('test_mode ON (u_left=%.1f, u_right=%.1f)'
         #                                    % (self.test_u_left, self.test_u_right))
-        
+
         if self.test_mode:
             self.create_timer(2.0, self.test_tick)
             self.get_logger().info('test_mode ON (u_left=%.1f, u_right=%.1f)'
@@ -92,7 +92,7 @@ class ObjectLocator(Node):
 
         if res is not None:
             self.publish_goal(res)
-    
+
     def publish_goal(self, res):
         p = PoseStamped()
         p.header.frame_id = self.map_frame
@@ -171,7 +171,7 @@ class ObjectLocator(Node):
                 self.map_frame,
                 self.lidar_frame,
                 Time(),
-                timeout=Duration(seconds=0.5),
+                # timeout=Duration(seconds=0.5),
             )
         except Exception as e:
             self.get_logger().warn('TF lookup 실패: %s' % str(e))
@@ -214,7 +214,7 @@ class ObjectLocator(Node):
                math.degrees(goal_yaw), r))
         return result
 
-    
+
         # result = {
         #     'map_x': out.point.x,
         #     'map_y': out.point.y,
@@ -231,7 +231,7 @@ class ObjectLocator(Node):
 
 def main():
     rclpy.init()
-    node = ObjectLocator()
+    node = ObservationNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

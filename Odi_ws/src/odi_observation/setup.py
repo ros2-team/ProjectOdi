@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'observing'
+package_name = 'odi_observation'
 
 setup(
     name=package_name,
@@ -24,7 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'object_locater_node = observing.object_locater:main',
+            'odi_observation_node = odi_observation.observation_node:main',
         ],
     },
 )
