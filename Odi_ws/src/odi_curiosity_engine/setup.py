@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'curiosity_engine'
+package_name = 'odi_curiosity_engine'
 
 setup(
     name=package_name,
@@ -24,7 +24,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'curiosity_engine_node = curiosity_engine.curiosity_engine_node:main',
+            'curiosity_engine_node = odi_curiosity_engine.curiosity_engine_node:main',
         ],
     },
 )

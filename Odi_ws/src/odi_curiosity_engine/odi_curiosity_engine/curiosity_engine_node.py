@@ -8,13 +8,13 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from odi_interfaces.msg import CuriosityDecision
 from odi_interfaces.srv import EvaluateCuriosity, GetSimilarObservations
 
-from curiosity_engine.core import (
+from odi_curiosity_engine.core import (
     ObjectCandidate,
     MemoryInfo,
     CuriosityCalculator,
     CuriosityPolicy
 )
-from curiosity_engine.core import weights as W
+from odi_curiosity_engine.core import weights as W
 
 
 class CuriosityEngineNode(Node):
