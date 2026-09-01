@@ -1,0 +1,10 @@
+string session_id
+---
+bool success
+string diary_id
+string diary_text
+string message
+---
+string stage
+float32 progress
+string message

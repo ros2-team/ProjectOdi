@@ -1,3 +1,5 @@
+# DB
+db_ws/.env
 
 # ROS2 build output
 Odi_ws/build/
