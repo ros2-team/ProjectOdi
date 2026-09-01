@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'odi_observation_node = odi_observation.observation_node:main',
+            'odi_observation_locator = odi_observation.observation_locator:main',
         ],
     },
 )
