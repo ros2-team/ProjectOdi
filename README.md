@@ -7,7 +7,7 @@ ROS 2 Humble 기반으로 동작하며, 미지의 실내 공간을 스스로 탐
 기존 홈 서비스 로봇이 *명령을 수행하는* 수동형이라면, ODi는 *스스로 발견하는* 능동형 로봇을 지향합니다.
 
 <p align="center">
-  <img src="docs/images/odi_hero.png" width="70%" alt="ODi 실기체">
+  <img width="810" height="751" alt="Odi — 호기심 탐사 로봇 _               " src="https://github.com/user-attachments/assets/29d6fa5c-25b9-4ebc-80f5-2e69481f29e6" />
 </p>
 
 <p align="center">
