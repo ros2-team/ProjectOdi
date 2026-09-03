@@ -90,7 +90,7 @@ def blank_state():
     return {
         # 미션 상태 — 화면 라우팅을 결정한다.
         # IDLE | PREPARING | EXPLORING | RETURNING | REFLECTING | COMPLETED
-        "mission": "EXPLORING",
+        "mission": "IDLE",  # ← EXPLORING 에서 바꿈
 
         # 지금 하고 있는 행동. 화면 상단의 큰 문구가 여기서 나온다.
         # EXPLORE | FIRST_ENCOUNTER | EVALUATE_CURIOSITY | OBSERVE
@@ -159,35 +159,26 @@ def snapshot():
 # 쓰기 — ros_link.py / fake.py 가 쓴다
 # ════════════════════════════════════════════════════════════
 
-def reset():
-    """상태를 초기값으로 되돌린다. 새 탐험을 시작할 때 호출.
 
-    ★ STATE = blank_state() 라고 쓰면 안 되는 이유
-      그건 이 모듈의 STATE 라는 '이름'이 새 딕셔너리를 가리키게 할 뿐이다.
-      다른 모듈이 이미 import 해 간 옛 딕셔너리는 그대로 남아서,
-      그쪽에서는 초기화가 안 된 것처럼 보인다.
-      clear() + update() 로 '같은 객체의 내용'을 바꿔야 모두에게 반영된다.
-    """
+def patch(**fields):
+    with LOCK:
+        for k, v in fields.items():
+            if v is None:
+                continue
+            # 이미 확인한 세션의 완료 보고는 무시한다 (go_idle 주석 참조)
+            if (k == "mission" and v == "COMPLETED"
+                    and _dismissed is not None
+                    and _dismissed == STATE.get("session_id")):
+                continue
+            STATE[k] = v
+
+
+def reset():
+    global _dismissed
     with LOCK:
         STATE.clear()
         STATE.update(blank_state())
-
-
-def patch(**fields):
-    """최상위 필드 여러 개를 한 번에 갱신한다.
-
-        patch(mission="RETURNING", motivation=0.3)
-
-    ** 는 키워드 인자를 딕셔너리로 모아주는 파이썬 문법이다.
-    patch(a=1, b=2) 로 부르면 함수 안에서 fields == {"a": 1, "b": 2} 가 된다.
-
-    None 인 값은 무시한다. 덕분에 호출하는 쪽에서
-    '값이 있으면 갱신, 없으면 그대로' 를 따로 if 없이 쓸 수 있다.
-    """
-    with LOCK:
-        for k, v in fields.items():
-            if v is not None:
-                STATE[k] = v
+        _dismissed = None       # 새 탐험이므로 확인 기록을 지운다
 
 
 def spend_motivation(amount):

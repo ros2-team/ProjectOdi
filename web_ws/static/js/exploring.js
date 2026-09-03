@@ -64,7 +64,17 @@ const S = {
   queue: [],
   camera: null,
   map: null,
-  discoveries: []
+  discoveries: [],
+
+  /* 배터리. {"percent": 87, "charging": false, "ready": true, "ready_pct": 40}
+     ready 는 브리지가 계산해서 내려준다 — 문턱값을 프론트에 또 적어두면
+     config.py 만 고치고 여기를 안 고치는 사고가 난다. */
+  battery: null,
+
+  /* 온·습도. 아직 센서가 확정되지 않아 항상 null 이다.
+     대기 화면에 자리만 잡아뒀고, 값이 들어오면 paintIdle 이 알아서 채운다.
+     기대하는 모양 : {"temp_c": 24.3, "humidity": 61, "at": "10:34:12"} */
+  env: null
 };
 
 /* 피드에 한 번에 보일 최대 개수.
@@ -136,6 +146,15 @@ let redirected = false;  // 일기로 두 번 이동하는 것을 막는다
      그 함정이 사라진다. */
 let sawActive = false;
 
+/* 시작 요청을 보내고 로봇의 응답을 기다리는 중인가.
+   대기 화면이 매초 갱신되므로, 이게 없으면 버튼 문구가 바로 덮인다. */
+let sending = false;
+
+/* PREPARING 에 들어온 시각.
+   로봇이 응답을 안 하면 여기서 영영 멈추기 때문에, 얼마나 기다렸는지
+   세어두었다가 일정 시간이 지나면 빠져나갈 길을 준다. */
+let preparingSince = 0;
+
 /* 브리지에서 상태를 한 번이라도 받았는가.
    받기 전에는 S 가 초기값(EXPLORING)이라, 그걸로 화면을 판단하면
    실제 상태와 무관한 화면이 잠깐 스쳤다가 바뀐다. */
@@ -169,15 +188,25 @@ function paint(){
 
     sawActive = true;
 
-    if(lastScreen === mission) return;   // 이미 그린 화면이면 아무것도 안 함
-    lastScreen = mission;
+    /* ★ 뼈대는 화면이 바뀔 때 한 번만 만든다.
+         대기 화면은 카메라·배터리가 매초 갱신돼야 하는데, 매초 renderIdle()
+         을 부르면 <img> 가 새로 생겨서 스트림이 끊기고 깜빡인다.
+         탐험 화면과 같은 규칙 — 만들기(render)와 채우기(paint)를 나눈다. */
+    if(lastScreen !== mission){
+      lastScreen = mission;
 
-    if(mission === 'IDLE')             renderIdle();
-    else if(mission === 'PREPARING')   renderInterlude('나갈 준비를 하고 있어요',
-                                                       '센서와 지도를 확인하고 있어요.');
-    else if(mission === 'REFLECTING')  renderInterlude('오늘 있었던 일을 정리하는 중',
-                                                       '사진을 고르고 있어요. 잠시만요.');
-    else                               renderInterlude('기다리는 중', mission);
+      if(mission === 'IDLE')             renderIdle();
+      else if(mission === 'PREPARING'){  renderInterlude('나갈 준비를 하고 있어요',
+                                                         '센서와 지도를 확인하고 있어요.');
+                                         preparingSince = Date.now(); }
+      else if(mission === 'REFLECTING')  renderInterlude('오늘 있었던 일을 정리하는 중',
+                                                         '사진을 고르고 있어요. 잠시만요.');
+      else                               renderInterlude('기다리는 중', mission);
+    }
+
+    /* 값 갱신은 매초 */
+    if(mission === 'IDLE')           paintIdle();
+    else if(mission === 'PREPARING') paintPreparing();
     return;
   }
 
@@ -194,23 +223,134 @@ function paint(){
 }
 
 
-/* ── 시작 화면 ─────────────────────────────────────────
-   탐험 화면이 정보를 빽빽하게 담는다면 여기는 반대다.
-   Odi 를 내보내는 것 말고 할 일이 없는 화면이라
-   시작 버튼이 유일한 초점이 되어야 한다. */
+/* ── 대기 화면 ─────────────────────────────────────────
+   집에 있는 Odi. 탐험 화면이 '지금 뭘 하고 있나'를 보여준다면
+   여기는 '나갈 수 있는 상태인가'를 보여준다.
+
+   ★ 관제 대시보드가 되지 않게 하는 규칙
+     숫자가 먼저 오면 대시보드, 문장이 먼저 오고 숫자가 근거로
+     따라오면 캐릭터다. 탐험 화면의 describe()/why() 와 같은 문법을 쓴다.
+     그래서 배터리도 "87%" 가 아니라 "나갈 준비가 됐어요" 가 먼저다.
+
+   ★ 시작 버튼은 여전히 유일한 초점이다.
+     카메라와 배터리를 얹되, 둘 다 버튼을 '설명하는' 자리에 둔다.
+     카메라 = 살아있다는 증거, 배터리 = 나갈 수 있는지의 근거. */
 function renderIdle(){
+  sending = false;
+
   el.screen.innerHTML = `
     <div class="idle">
       <div class="mark"><span></span></div>
       <h1>Odi</h1>
-      <p class="intro">낯선 곳을 혼자 돌아다니다가,<br>
-         마음에 걸리는 걸 만나면 멈춰 서서<br>한참 들여다보는 로봇.</p>
+
+      <div class="watch">
+        <div class="lens" id="idleCam"><div class="wait">아직 눈을 못 떴어요</div></div>
+        <div class="watchfoot">
+          <span>지금 보고 있는 것</span>
+          <span class="mono" id="idleShotAt">—</span>
+        </div>
+      </div>
+
+      <div class="vitals">
+        <div class="vital" id="vBat">
+          <span class="k">배터리</span>
+          <span class="v mono" id="vBatPct">—</span>
+          <span class="bar"><i id="vBatFill"></i></span>
+        </div>
+        <div class="vital soon">
+          <span class="k">온도</span>
+          <span class="v mono">—</span>
+        </div>
+        <div class="vital soon">
+          <span class="k">습도</span>
+          <span class="v mono">—</span>
+        </div>
+      </div>
+
       <button class="start" id="startBtn">탐험 보내기</button>
+      <p class="gate" id="gate">상태를 확인하는 중</p>
+
       <div class="past" id="pastList"></div>
     </div>`;
 
   document.getElementById('startBtn').addEventListener('click', startMission);
+
+  /* 대기 화면 전용 참조. el 은 index.html 의 고정 엘리먼트를 담고 있고,
+     여기 것들은 renderIdle 이 돌 때마다 새로 만들어지므로 그때 갱신한다. */
+  Object.assign(el, {
+    idleCam:    $('idleCam'),
+    idleShotAt: $('idleShotAt'),
+    vBat:       $('vBat'),
+    vBatPct:    $('vBatPct'),
+    vBatFill:   $('vBatFill'),
+    gate:       $('gate'),
+    startBtn:   $('startBtn')
+  });
+
   loadPast();
+  paintIdle();      // 첫 값을 즉시 채운다 (다음 틱까지 '—' 로 두지 않는다)
+}
+
+
+/* 대기 화면 값 갱신. 매초 불린다.
+   paintExploring() 과 같이 DOM 을 다시 만들지 않고 제자리에서 바꾼다. */
+function paintIdle(){
+  if(!el.idleCam) return;      // renderIdle 이 아직 안 돌았다
+
+  /* ── 카메라 ──────────────────────────────────────────
+     탐험 화면과 완전히 같은 방식. <img> 를 딱 한 번만 만들고
+     그 뒤로는 건드리지 않는다. MJPEG 은 연결을 유지한 채
+     브라우저가 알아서 이어 그린다.
+
+     /camera/stream 은 mission 과 무관하게 동작하므로
+     대기 중에도 그대로 쓸 수 있다. */
+  if(S.camera && !el.idleCam.dataset.stream){
+    el.idleCam.dataset.stream = '1';
+    el.idleCam.innerHTML = '<img src="/camera/stream" alt="Odi가 보고 있는 화면">';
+  }
+  el.idleShotAt.textContent = S.camera?.at || '—';
+
+  /* ── 배터리 ──────────────────────────────────────────
+     ros_link.on_battery 가 채운다. 로봇이 BatteryState 를 발행하지
+     않거나 percentage 가 NaN 이면 계속 null 이다. */
+  const b = S.battery;
+  if(b){
+    const pct = Math.max(0, Math.min(100, b.percent));
+    el.vBatPct.textContent = pct + '%';
+    el.vBatFill.style.width = pct + '%';
+    el.vBat.classList.toggle('low', !b.ready);
+    el.vBat.classList.toggle('charging', !!b.charging);
+  }else{
+    el.vBatPct.textContent = '—';
+    el.vBatFill.style.width = '0%';
+    el.vBat.classList.remove('low', 'charging');
+  }
+
+  /* ── 출발 조건 ───────────────────────────────────────
+     ★ 배터리를 '모를 때'는 막지 않는다.
+       센서가 아직 안 붙었거나 로봇이 발행 전일 수 있는데,
+       그때 버튼이 잠기면 데모 자체가 안 된다.
+       아는 것 때문에만 막고, 모르는 것 때문에는 막지 않는다.
+
+     ★ 눌러보기 전에 이유를 알려준다.
+       예전에는 눌러야 409 를 보고 알 수 있었다. */
+  if(sending) return;          // 시작 요청 중이면 버튼 문구를 덮지 않는다
+
+  const blocked = !!(b && !b.ready);
+  el.startBtn.disabled = blocked;
+  el.startBtn.textContent = '탐험 보내기';
+
+  if(!b){
+    el.gate.textContent = '배터리를 아직 못 읽었어요. 그래도 나갈 수는 있어요.';
+  }else if(blocked){
+    el.gate.textContent = b.charging
+      ? `충전 중이에요. ${b.ready_pct}%가 넘으면 나갈 수 있어요.`
+      : '배터리가 부족해요. 충전기에 올려 주세요.';
+  }else if(b.charging){
+    el.gate.textContent = '충전 중이지만 지금 나가도 괜찮아요.';
+  }else{
+    el.gate.textContent = '나갈 준비가 됐어요.';
+  }
 }
 
 /* 지난 일기 목록. 없거나 실패하면 조용히 비워둔다 —
@@ -244,14 +384,21 @@ async function startMission(){
   const btn = document.getElementById('startBtn');
   if(btn){ btn.disabled = true; btn.textContent = '깨우는 중…'; }
 
+  /* ★ paintIdle 이 매초 버튼을 되돌려놓지 않게 잠근다.
+       이 플래그가 없으면 '깨우는 중…' 이 1 초 만에 '탐험 보내기' 로
+       돌아가서, 눌렀는지 안 눌렀는지 알 수 없는 화면이 된다. */
+  sending = true;
+
   try{
     const res = await fetch('/sessions', {method: 'POST'});
     if(res.status === 409){
       // 이미 탐험 중이다. 중복 시작 방지.
+      sending = false;
       if(btn){ btn.disabled = false; btn.textContent = '이미 탐험 중이에요'; }
       return;
     }
   }catch(e){
+    sending = false;
     if(btn){ btn.disabled = false; btn.textContent = '연결에 실패했어요'; }
     return;
   }
@@ -270,9 +417,15 @@ function renderDone(){
       <p>일기가 준비되어 있어요.</p>
       <div class="footer">
         <a href="${link}">일기 보기</a>
-        <a href="/?screen=IDLE">다시 보내기</a>
+        <button class="link" id="homeBtn">대기 화면으로</button>
       </div>
     </div>`;
+
+  /* ★ 링크가 아니라 버튼인 이유
+       그냥 <a href="/"> 로 두면 서버 상태가 아직 COMPLETED 라서
+       이 화면으로 다시 돌아온다. 상태를 IDLE 로 되돌리는 요청을
+       먼저 보내야 관제 화면에 갈 수 있다. */
+  document.getElementById('homeBtn').addEventListener('click', goHome);
 }
 
 function renderInterlude(title, sub){
@@ -281,7 +434,52 @@ function renderInterlude(title, sub){
       <div class="dots"><i></i><i></i><i></i></div>
       <h2>${title}</h2>
       <p>${sub}</p>
+      <p class="hint" id="hint"></p>
     </div>`;
+}
+
+
+/* 로봇이 응답을 안 할 때 빠져나갈 길.
+
+   ★ 왜 필요한가
+     POST /sessions 는 로봇에게 START 를 보낼 뿐, 로봇이 실제로
+     뜨는지는 보장하지 않는다. 로봇 노드가 안 떠 있으면
+     MissionState 가 영영 안 와서 이 화면에 갇힌다.
+
+     발표 중에 이렇게 되면 새로고침 말고는 방법이 없다.
+     기다린 시간을 알려주고 되돌아갈 버튼을 주는 게 낫다.
+
+   ★ 12 초인 이유
+     로봇이 정상이면 보통 2~3 초 안에 EXPLORING 을 보고한다.
+     너무 짧으면 정상인데도 경고가 뜨고, 너무 길면 갇힌 것처럼 느껴진다. */
+function paintPreparing(){
+  const hint = document.getElementById('hint');
+  if(!hint || hint.dataset.on) return;      // 이미 띄웠으면 그대로 둔다
+
+  if((Date.now() - preparingSince) / 1000 < 12) return;
+
+  hint.dataset.on = '1';
+  hint.innerHTML = `로봇이 아직 응답하지 않아요.
+    <button class="link" id="cancelBtn">대기 화면으로</button>`;
+  document.getElementById('cancelBtn').addEventListener('click', goHome);
+}
+
+
+/* 관제(대기) 화면으로 되돌아간다.
+
+   ★ 왜 그냥 location.href = '/' 가 아닌가
+     서버 상태가 COMPLETED 나 PREPARING 이면 / 로 가도 그 화면이 다시 뜬다.
+     먼저 서버에 "이 세션은 다 봤다"고 알려서 상태를 IDLE 로 되돌려야 한다.
+
+   ★ 요청이 실패해도 이동은 한다
+     서버가 죽어 있으면 최소한 화면은 넘어가야 사용자가 뭘 해볼 수 있다. */
+async function goHome(){
+  try{
+    await fetch('/sessions/home', {method: 'POST'});
+  }catch(e){
+    console.warn('대기 상태로 되돌리지 못했습니다', e);
+  }
+  location.href = '/';
 }
 
 

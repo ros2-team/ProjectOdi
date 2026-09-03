@@ -11,8 +11,10 @@ app 을 import 하지 않는다 — 이 파일은 웹이 존재하는지도 모�
 # │     config                토픽 이름, 사진 폴더
 # │     bridge.state          로봇 상태 (쓰기만)
 # │     bridge.frames         카메라 사진 (쓰기만)
+# │     bridge.commands       웹이 넣어둔 명령 (읽기만)
 # │
 # │ ★ app.py 를 import 하지 않는다.
+# │   웹에서 오는 명령도 commands 큐를 통해서만 받는다.
 # │
 # │ 부르는 파일 : run.py 의 start_producers()
 # │              (config.USE_FAKE = False 일 때만)
@@ -35,6 +37,8 @@ app 을 import 하지 않는다 — 이 파일은 웹이 존재하는지도 모�
 #
 # ════════════════════════════════════════════════════════════
 
+import functools
+import math
 import threading
 import time
 
@@ -45,6 +49,7 @@ from rclpy.qos import (DurabilityPolicy, QoSProfile, ReliabilityPolicy,
 
 from nav_msgs.msg import OccupancyGrid, Odometry
 from sensor_msgs.msg import BatteryState, CompressedImage
+from std_msgs.msg import String
 
 from odi_interfaces.msg import (
     BehaviorState,
@@ -56,10 +61,36 @@ from odi_interfaces.msg import (
 )
 
 import config
-from bridge import frames, mapper, state
+from bridge import commands, frames, mapper, state
 
 MEDIA_DIR = config.STATIC_DIR / "media"
 MAP_PNG = MEDIA_DIR / "map.png"
+
+
+def safe(fn):
+    """콜백 하나가 터져도 rclpy.spin() 이 안 죽게 감싼다.
+
+    ★ 왜 필요한가
+      rclpy 는 콜백에서 빠져나온 예외를 잡아주지 않는다.
+      그대로 spin() 밖으로 나가면서 ROS 스레드가 통째로 끝난다.
+
+      실제로 겪은 사고 :
+        config 에 상수 하나를 안 넣어서 on_battery 가 AttributeError 를 냈고,
+        그 한 줄 때문에 카메라도 지도도 전부 멈췄다.
+        화면에는 아무 에러도 안 뜨고 그냥 조용히 멎는다.
+
+    ★ 왜 로그만 남기고 넘어가는가
+      한 토픽이 실패해도 나머지는 계속 받아야 한다.
+      화면이 통째로 멈추는 것보다, 한 항목만 옛날 값에 머무는 게 낫다.
+      tools/fake_robot.py 의 run_action 이 쓰는 것과 같은 원칙이다.
+    """
+    @functools.wraps(fn)
+    def wrapped(self, msg):
+        try:
+            return fn(self, msg)
+        except Exception as e:
+            self.get_logger().error(f"{fn.__name__} 실패: {e}")
+    return wrapped
 
 
 def to_web_path(fs_path):
@@ -107,9 +138,19 @@ class OdiBridgeNode(Node):
         (MEDIA_DIR / "obs").mkdir(exist_ok=True)
 
         self._disk_last = 0.0
+        self._battery_last = 0.0        # 배터리 반영 스로틀
         self._path = []                 # 지나온 좌표 [(x, y), …] 세상 좌표(미터)
         self._pose = None               # 지금 위치 (x, y)
-        self._markers = []              # 발견 위치 [(x, y, action), …]
+
+        # 발견 위치. {detection_id: (x, y, action)}
+        #
+        # ★ 리스트가 아니라 딕셔너리인 이유
+        #   전에는 리스트에 append 하고, 판단이 오면 마지막 항목([-1])의
+        #   action 을 채웠다. 한 장면에서 물체가 하나일 때만 맞는 방식이다.
+        #   chair / bottle / backpack 이 동시에 잡히면 세 개가 쌓이는데,
+        #   먼저 온 판단이 마지막 마커에 붙어서 엉뚱한 점이 주황색이 된다.
+        #   detection_id 로 찾으면 순서가 어떻든 제 짝에 붙는다.
+        self._markers = {}
         self._exploring_since = None    # EXPLORING 진입 시각 → 경과 시간 계산
 
         # 지도
@@ -126,9 +167,20 @@ class OdiBridgeNode(Node):
             self.on_camera, qos_profile_sensor_data)
         self.create_subscription(
             Odometry, config.TOPIC_ODOM, self.on_odom, 10)
+        # ★ 배터리만 QoS 가 다르다.
+        #   turtlebot3_node 는 /battery_state 를 RELIABLE 로 발행한다.
+        #   카메라처럼 qos_profile_sensor_data(BEST_EFFORT) 로 구독하면
+        #   호환이 안 맞아 연결 자체가 안 맺어진다.
+        #   에러도 경고도 없이 콜백이 영영 안 불린다 —
+        #   ros2 topic info 의 Subscription count 가 0 인 게 유일한 단서다.
+        #
+        #   규칙 : 구독자가 발행자보다 요구가 세면 안 붙는다.
+        #          BEST_EFFORT 발행 + RELIABLE 구독  →  ✗
+        #          RELIABLE    발행 + BEST_EFFORT 구독 →  ✓
+        #   10 은 depth 10 의 기본 프로파일이고 RELIABLE 이다.
         self.create_subscription(
             BatteryState, config.TOPIC_BATTERY,
-            self.on_battery, qos_profile_sensor_data)
+            self.on_battery, 10)
 
         # ★ QoS 를 기본값(VOLATILE)으로 둔다.
         #   TRANSIENT_LOCAL 로 요구하면 VOLATILE 퍼블리셔와 호환이 안 돼서
@@ -154,6 +206,12 @@ class OdiBridgeNode(Node):
         self.create_subscription(
             ObservationResult, config.TOPIC_OBSERVATION, self.on_observation, 10)
 
+        # ── 웹 → 로봇 ───────────────────────────────────────
+        # 지금까지는 전부 받기만 했다. 이게 유일하게 내보내는 토픽이다.
+        # 미션 노드가 이걸 구독해서 "START" 를 받으면 탐험을 시작한다.
+        self.pub_command = self.create_publisher(
+            String, config.TOPIC_COMMAND, 10)
+
         self.create_timer(1.0, self.on_tick)
         self.get_logger().info("웹 브리지 노드 시작")
 
@@ -161,6 +219,7 @@ class OdiBridgeNode(Node):
     # 센서
     # ════════════════════════════════════════════════════════
 
+    @safe
     def on_camera(self, msg):
         """프레임은 메모리로, 파일은 느리게.
 
@@ -182,6 +241,7 @@ class OdiBridgeNode(Node):
         # 프론트는 이 값이 null 에서 벗어나야 <img> 를 만든다
         state.patch(camera={"live": True, "at": time.strftime("%H:%M:%S")})
 
+    @safe
     def on_odom(self, msg):
         """로봇 위치. 지도 위의 경로선과 현재 위치 점이 여기서 나온다.
 
@@ -204,15 +264,61 @@ class OdiBridgeNode(Node):
             if len(self._path) > 2000:
                 self._path = self._path[::2]
 
+    @safe
     def on_battery(self, msg):
-        """받기만 하고 화면에 안 띄운다.
-        배터리 퍼센트를 띄우면 화면이 관제 대시보드가 되어 캐릭터가 죽는다."""
-        pass
+        """BatteryState → 대기 화면의 출발 조건.
+
+        ★ 탐험 화면에는 여전히 안 띄운다.
+          탐험 중에 배터리 퍼센트가 보이면 화면이 관제 대시보드가 되어
+          캐릭터가 죽는다. 대기 화면에서는 성격이 다르다 —
+          '나갈 수 있는 상태인가'라는 출발 조건이라 캐릭터와 부딪히지 않는다.
+          그래서 exploring.js 는 이 값을 IDLE 화면에서만 그린다.
+
+        ★ percentage 의 단위가 드라이버마다 다르다.
+          REP-147 은 0.0~1.0 인데 0~100 으로 쏘는 드라이버가 흔하다.
+          turtlebot3_node 는 28.33 처럼 0~100 으로 준다.
+          둘 다 받도록 해둔다. 안 그러면 87% 가 1% 로 보인다.
+
+        ★ NaN 을 걸러야 한다.
+          퍼센트를 못 재는 드라이버는 NaN 을 넣는다.
+          그대로 내려보내면 json.dumps 가 NaN 을 뱉고,
+          브라우저의 JSON.parse 가 통째로 터진다. WebSocket 이 죽는다.
+        """
+        pct = msg.percentage
+        if pct is None or math.isnan(pct):
+            return
+
+        if pct <= 1.0:                  # 0.0~1.0 스케일이면 퍼센트로 바꾼다
+            pct *= 100.0
+        pct = max(0.0, min(100.0, float(pct)))
+
+        # 배터리는 초당 여러 번 올 수 있다. 1 초에 한 번만 반영한다.
+        # 화면이 1Hz 로 갱신되므로 더 자주 써봐야 보이지도 않는다.
+        now = time.time()
+        if now - self._battery_last < 1.0:
+            return
+        self._battery_last = now
+
+        # power_supply_status : 1 = CHARGING, 4 = FULL
+        # turtlebot3_node 는 0 (UNKNOWN) 을 주는 경우가 많다 → 충전 아님으로 본다
+        charging = msg.power_supply_status in (1, 4)
+
+        # ★ ready 를 브리지가 계산해서 내려준다.
+        #   문턱값을 프론트에도 적어두면 config.py 만 고치고
+        #   자바스크립트를 안 고치는 사고가 난다.
+        state.patch(battery={
+            "percent":   round(pct),
+            "charging":  charging,
+            "ready":     pct >= config.BATTERY_READY_PCT,
+            "ready_pct": config.BATTERY_READY_PCT,
+            "at":        time.strftime("%H:%M:%S"),
+        })
 
     # ════════════════════════════════════════════════════════
     # 미션 · 행동
     # ════════════════════════════════════════════════════════
 
+    @safe
     def on_mission(self, msg):
         """MissionState → 화면 라우팅.
 
@@ -247,6 +353,7 @@ class OdiBridgeNode(Node):
         elif msg.state in ("IDLE", "PREPARING", "COMPLETED"):
             self._exploring_since = None
 
+    @safe
     def on_behavior(self, msg):
         """BehaviorState → 상단 큰 문구.
 
@@ -258,6 +365,7 @@ class OdiBridgeNode(Node):
         """
         state.patch(behavior=msg.behavior)
 
+    @safe
     def on_detections(self, msg):
         """DetectedObjectArray → "다음 차례 · bottle, backpack"
 
@@ -268,6 +376,7 @@ class OdiBridgeNode(Node):
         names = [o.class_name for o in msg.objects]
         state.patch(queue=names[1:] if len(names) > 1 else [])
 
+    @safe
     def on_map(self, msg):
         """SLAM 지도. 메시지만 받아두고 변환은 타이머에서 한다."""
         if self._map_msg is None:
@@ -296,11 +405,28 @@ class OdiBridgeNode(Node):
             return              # 아직 아무 데도 안 가봤다
 
         self._map_seq += 1
+        # mapper 는 [(x, y, action), …] 리스트를 기대한다.
+        # 딕셔너리는 파이썬 3.7+ 에서 넣은 순서를 유지하므로
+        # values() 를 그대로 넘기면 발견 순서대로 그려진다.
         state.patch(map=mapper.build_state(
-            view, self._map_seq, self._path, self._pose, self._markers))
+            view, self._map_seq, self._path, self._pose,
+            list(self._markers.values())))
 
     def on_tick(self):
-        """경과 시간. MissionState 에 시간 필드가 없어서 브리지가 센다."""
+        """1 초마다. 명령 배출 → 지도 변환 → 경과 시간.
+
+        ★ 명령을 여기서 내보내는 이유
+          웹 요청(Flask 스레드)에서 곧바로 publish 하면
+          rclpy 를 두 스레드에서 동시에 만지게 된다.
+          큐에 넣어두고 ROS 스레드가 꺼내 보내면 그 문제가 없다.
+        """
+        # 웹에서 쌓인 명령을 토픽으로 내보낸다
+        for name, detail in commands.drain():
+            m = String()
+            m.data = f"{name}:{detail}" if detail else name
+            self.pub_command.publish(m)
+            self.get_logger().info(f"명령 발행 → {m.data}")
+
         self.render_map()
 
         if self._exploring_since is None:
@@ -312,6 +438,7 @@ class OdiBridgeNode(Node):
     # 발견 3 단계 — 전부 detection_id 로 묶인다
     # ════════════════════════════════════════════════════════
 
+    @safe
     def on_encounter(self, msg):
         """① EncounterResult — 물체를 처음 만났다.
 
@@ -331,21 +458,17 @@ class OdiBridgeNode(Node):
             "decision": None,
         }
         # 지도에 찍을 발견 위치. 지금 로봇이 서 있는 자리를 쓴다.
+        # detection_id 를 열쇠로 넣어야 나중에 판단이 제 짝을 찾는다.
         if self._pose:
-            self._markers.append((self._pose[0], self._pose[1], "PENDING"))
+            self._markers[msg.detection_id] = (
+                self._pose[0], self._pose[1], "PENDING")
 
         fields = {k: v for k, v in item.items() if k != "detection_id"}
         if not state.update_discovery(msg.detection_id, **fields):
             state.add_discovery(item)
 
+    @safe
     def on_decision(self, msg):
-
-        # 마지막 발견 마커의 판단 결과를 채운다.
-        # OBSERVE 는 주황 큰 점, IGNORE 는 회색 작은 점으로 그려진다.
-        if self._markers and self._markers[-1][2] == "PENDING":
-            x, y, _ = self._markers[-1]
-            self._markers[-1] = (x, y, msg.action)
-            
         """② CuriosityDecision — 호기심 판단이 끝났다.
 
         이 필드들로 화면 문장이 생성된다 (static/js/schema.js 의 describe).
@@ -356,7 +479,17 @@ class OdiBridgeNode(Node):
 
         ★ visit_count 가 .msg 에 없으면 아래 getattr 이 0 을 돌려주고
           화면에 "0번째 보는 거예요"가 뜬다. 필드 추가가 필요하다.
+
+        ★ 이 docstring 은 함수 첫 줄에 있어야 한다.
+          전에는 마커 갱신 코드 뒤에 있어서 docstring 이 아니라
+          그냥 버려지는 문자열이었다. help() 에도 안 뜬다.
         """
+        # 이 발견의 지도 마커에 판단 결과를 채운다.
+        # OBSERVE 는 주황 큰 점, IGNORE 는 회색 작은 점으로 그려진다.
+        if msg.detection_id in self._markers:
+            x, y, _ = self._markers[msg.detection_id]
+            self._markers[msg.detection_id] = (x, y, msg.action)
+
         decision = {
             "action":                msg.action,
             "curiosity_score":       float(msg.curiosity_score),
@@ -379,6 +512,7 @@ class OdiBridgeNode(Node):
                 "decision": decision,
             })
 
+    @safe
     def on_observation(self, msg):
         """③ ObservationResult — 관찰이 끝났다.
 

@@ -27,11 +27,14 @@ ros_link / db / fake 를 import 하지 않는다.
 # │     config                        설정값
 # │     bridge.state                  로봇 상태 (읽기만)
 # │     bridge.frames                 카메라 사진 (읽기만)
+# │     bridge.commands               로봇에게 보낼 명령 (쓰기만)
 # │     bridge.diary_fake             일기 데이터
 # │                                   ↑ DB 생기면 bridge.db 로 교체
 # │
 # │ ★ ros_link / fake 를 import 하지 않는다.
 # │   그래서 ROS 가 없어도 이 파일은 그대로 돌아간다.
+# │   로봇에게 말을 걸어야 할 때도 commands 큐에 넣기만 한다 —
+# │   그게 토픽이 되는지 아무것도 안 되는지 이 파일은 모른다.
 # │
 # │ 브라우저에게 넘겨주는 파일 :
 # │     GET /               → static/index.html
@@ -47,7 +50,7 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_sock import Sock
 
 import config
-from bridge import frames, state
+from bridge import commands, frames, state
 
 # 일기 데이터 출처.
 # DB 테이블이 생기면 이 한 줄만 바꾼다:
@@ -228,19 +231,28 @@ def create_app():
         return jsonify(state.snapshot())
 
     # ════════════════════════════════════════════════════════
-    # 4 단계에서 채울 자리 — 탐험 시작 명령
+    # 화면 흐름을 여는 두 개의 문
+    #
+    #   POST /sessions        관제 → 탐험    (START 명령을 로봇에게)
+    #   POST /sessions/home   일기 → 관제    (완료 보고를 확인 처리)
+    #
+    # 브라우저가 상태를 직접 바꾸는 유일한 자리다.
+    # 나머지는 전부 로봇이 보고한 것을 그대로 흘려보낸다.
     # ════════════════════════════════════════════════════════
 
     @app.post("/sessions")
     def start_session():
-        """탐험 시작 요청.
+        """탐험 시작 요청. 대기 화면의 [탐험 보내기] 가 부른다.
 
-        ★ 아직 스텁이다.
-          진짜로는 여기서 Explore 액션에 goal 을 보내야 한다 (4단계).
-          지금은 상태만 초기화하고, 로봇이 MissionState 를 보고하기를 기다린다.
+        ★ 상태의 주인은 여전히 로봇이다.
+          여기서 mission 을 EXPLORING 으로 바꾸지 않는다.
+          로봇이 실제로 못 뜨면 화면만 거짓말하게 된다.
+          PREPARING 까지만 바꾸고, EXPLORING 은 로봇이 보고할 때 바뀐다.
 
-          상태의 주인은 로봇이므로 여기서 mission 을 EXPLORING 으로
-          바꾸지 않는다. 로봇이 실제로 못 뜨면 화면만 거짓말하게 된다.
+        ★ 명령은 큐에 넣기만 한다.
+          여기서 ROS 퍼블리셔를 만들면 app.py 가 rclpy 를 import 하게 되고,
+          ROS 없는 컴퓨터에서 웹 서버가 아예 안 뜬다.
+          bridge/commands.py 에 넣어두면 ros_link 가 꺼내서 발행한다.
         """
         s = state.snapshot()
         if s["mission"] not in ("IDLE", "COMPLETED"):
@@ -252,12 +264,39 @@ def create_app():
         state.reset()
         state.patch(mission="PREPARING")
 
+        # 로봇에게 출발하라고 알린다.
+        # 로봇이 안 떠 있으면 아무도 안 꺼내가고, 화면은 PREPARING 에 머문다.
+        # (프론트가 12 초 뒤 "로봇이 아직 응답하지 않아요" 를 띄운다)
+        commands.send("START")
+
         # 가짜 모드에서는 시나리오를 처음부터 다시 돌린다.
         if config.USE_FAKE:
             from bridge import fake
             fake.restart()
 
         return jsonify(session_id=1), 201   # 201 Created
+
+    @app.post("/sessions/home")
+    def go_home():
+        """일기의 [홈으로] 버튼. 화면을 대기 상태로 되돌린다.
+
+        ★ 왜 이 라우트가 필요한가
+          탐험이 끝나면 상태가 COMPLETED 로 남는다.
+          그대로 / 를 열면 "오늘 탐험은 끝났어요" 화면이 뜨거나
+          일기로 다시 튕겨서, 관제 화면에 갈 방법이 없다.
+
+        ★ 왜 state.patch(mission="IDLE") 로 끝내지 않는가
+          로봇이 COMPLETED 를 1Hz 로 계속 보고하고 있으면
+          1 초 뒤에 그대로 덮어써진다. 그래서 state.go_idle() 이
+          '이 세션의 완료 보고는 확인했다'를 함께 기록한다.
+          새 탐험이 시작돼 session_id 가 바뀌면 자동으로 풀린다.
+
+        ★ 왜 reset() 이 아닌가
+          reset() 은 발견 목록까지 지운다. 여기서는 상태만 바꾼다 —
+          일기를 다시 열었을 때 그 데이터가 아직 필요하다.
+        """
+        state.go_idle()
+        return jsonify(ok=True)
 
     # ════════════════════════════════════════════════════════
     # (2) WebSocket — 상태 푸시

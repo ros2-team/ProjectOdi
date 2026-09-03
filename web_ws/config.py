@@ -55,6 +55,10 @@ TOPIC_OBSERVATION = "/odi/observation"    # 로봇 팀이 ObservationResult 로 
 
 TOPIC_MAP = "/map"  # SLAM 지도 데이터
 
+# 웹 → 로봇 명령. std_msgs/String 으로 "START" 를 보낸다.
+# ★ 로봇 팀은 이 토픽만 구독하면 된다. 커스텀 메시지 필요 없음.
+TOPIC_COMMAND = "/odi/command"
+
 # 로봇이 관찰 사진을 저장하는 폴더.
 # 웹은 이 폴더를 /media/obs/파일명 으로 서빙한다.
 # 로봇이 다른 폴더에 저장하면 심볼릭 링크를 걸거나 이 값을 맞춘다.
@@ -74,3 +78,7 @@ DB = {
 # ── 5단계: 지도 관련 설정 ────────────────────────────────
 MAP_THROTTLE_SEC = 2.0  # 지도 PNG 이미지 재생성 간격
 MAP_CROP_MARGIN = 10  # 미탐색 영역을 잘라낼 때 남길 여백 크기 (셀)
+
+# 이 퍼센트 미만이면 대기 화면의 시작 버튼이 잠긴다.
+# 발표 직전에 배터리가 애매하면 여기를 낮춘다.
+BATTERY_READY_PCT = 20

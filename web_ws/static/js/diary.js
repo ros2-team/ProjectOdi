@@ -170,10 +170,12 @@ function render(s, obs){
 
       <div class="footer">
         <a href="/diary">지난 일기</a>
-        <a href="/">탐험 화면</a>
+        <button class="link" id="homeBtn">홈으로</button>
       </div>
 
     </div>`;
+
+  bindHome();
 }
 
 
@@ -242,13 +244,47 @@ function ordinal(n){
 }
 
 
+/* ============================================================
+   홈으로 돌아가기
+
+   ★ 왜 <a href="/"> 로는 안 되는가
+     탐험이 끝나면 서버 상태가 COMPLETED 로 남아 있다.
+     그 상태로 / 를 열면 exploring.js 가 "오늘 탐험은 끝났어요"
+     화면을 띄우거나 이 일기로 되돌려 보낸다. 관제 화면에 갈 수가 없다.
+
+     그래서 먼저 서버에 "이 세션은 다 봤다"고 알린다.
+     서버는 그 세션의 COMPLETED 보고를 그때부터 무시하고 IDLE 을 준다.
+     로봇이 COMPLETED 를 1Hz 로 계속 쏘고 있어도 화면이 안 튕긴다.
+
+   ★ 요청이 실패해도 이동은 한다
+     서버가 죽어 있으면 최소한 화면은 넘어가야 뭐라도 해볼 수 있다. */
+async function goHome(){
+  try{
+    await fetch('/sessions/home', {method: 'POST'});
+  }catch(e){
+    console.warn('대기 상태로 되돌리지 못했습니다', e);
+  }
+  location.href = '/';
+}
+
+/* 푸터는 render() / renderError() 가 innerHTML 로 새로 만든다.
+   그때마다 버튼이 새 엘리먼트가 되므로, 그릴 때마다 다시 연결해야 한다.
+   각 렌더 함수 끝에서 부르는 대신 여기서 한 번에 처리한다. */
+function bindHome(){
+  const btn = document.getElementById('homeBtn');
+  if(btn) btn.addEventListener('click', goHome);
+}
+
+
 function renderError(title, detail){
   page.innerHTML = `
     <div class="interlude">
       <h2>${title}</h2>
       <p>${detail}</p>
-      <div class="footer"><a href="/diary">지난 일기</a><a href="/">탐험 화면</a></div>
+      <div class="footer"><a href="/diary">지난 일기</a><button class="link" id="homeBtn">홈으로</button></div>
     </div>`;
+
+  bindHome();
 }
 
 
