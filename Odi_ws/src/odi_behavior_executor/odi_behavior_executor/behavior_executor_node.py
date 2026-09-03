@@ -1167,8 +1167,18 @@ class BehaviorExecutorNode(Node):
             )
             return
 
+        current_object = self.blackboard.current_object
         encounter_result = self.blackboard.encounter_result
         curiosity_decision = self.blackboard.curiosity_decision
+
+        if current_object is None:
+            self.get_logger().warning(
+                "Cannot start observation : current_object is missing"
+            )
+            self.blackboard.current_stage = (
+                ObjectProcessStage.FAILED
+            )
+            return
 
         if encounter_result is None:
             self.get_logger().warning(
@@ -1196,6 +1206,7 @@ class BehaviorExecutorNode(Node):
 
         goal_msg = ObserveObject.Goal()
         goal_msg.session_id = self.blackboard.session_id
+        goal_msg.target = current_object
         goal_msg.encounter = encounter_result
         goal_msg.decision = curiosity_decision
 
@@ -1205,6 +1216,8 @@ class BehaviorExecutorNode(Node):
             "\n::Observation goal requested::\n"
             f"session_id = {goal_msg.session_id}\n"
             f"detection_id = {encounter_result.detection_id}\n"
+            f"class_name = {current_object.class_name}\n"
+            f"center = {current_object.center_x}, {current_object.center_y}"
             f"object_name = {encounter_result.label.object_name}"
         )
 
