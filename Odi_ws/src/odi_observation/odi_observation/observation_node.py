@@ -8,6 +8,8 @@ import threading
 
 from pathlib import Path
 from typing import Literal, cast
+from geometry_msgs.msg import PoseStamped
+
 from openai import OpenAI
 from openai.types.responses import ResponseInputParam
 
@@ -25,6 +27,7 @@ from odi_interfaces.action import ObserveObject
 from odi_interfaces.msg import (
     ObservationResult,
     SemanticLabel,
+    DetectedObject,
 )
 from odi_interfaces.srv import SaveObservation
 
@@ -35,6 +38,8 @@ ImageDetail = Literal[
     'original',
 ]
 
+class ObservationCanceledError(RuntimeError):
+    pass
 class ObservationNode(Node):
 
     ANALYSIS_PROMPT = """
@@ -77,6 +82,13 @@ Rules:
         self.goal_lock = threading.Lock()
         self.goal_reserved = False
 
+        self.locator_lock = threading.Lock()
+        self.locator_event = threading.Event()
+
+        self.awaiting_locator_result = False
+        self.latest_approach_goal = None
+
+
         self.declare_parameter(
             'world_memory_timeout_sec',
             5.0,
@@ -85,11 +97,26 @@ Rules:
             'openai_timeout_sec',
             30.0,
         )
+        self.declare_parameter(
+            'locator_timeout_sec',
+            5.0,
+        )
 
         openai_timeout_sec = (
             self.get_parameter('openai_timeout_sec')
             .get_parameter_value()
             .double_value
+        )
+        self.world_memory_timeout_sec = (
+            self.get_parameter('world_memory_timeout_sec')
+            .get_parameter_value()
+            .double_value
+        )
+        self.locator_timeout_sec = (
+            self.get_parameter('locator_timeout_sec')
+            .get_parameter_value()
+            .double_value
+
         )
 
         self.model = os.getenv(
@@ -141,11 +168,7 @@ Rules:
                 '\n Observation goals will be rejected'
             )
 
-        self.world_memory_timeout_sec = (
-            self.get_parameter('world_memory_timeout_sec')
-            .get_parameter_value()
-            .double_value
-        )
+
 
         self.save_observation_client = (
             self.create_client(
@@ -154,6 +177,24 @@ Rules:
                 callback_group = self.callback_group,
             )
         )
+        self.locator_request_publisher = (
+            self.create_publisher(
+                DetectedObject,
+                '/observe/locate_request',
+                10,
+            )
+        )
+
+        self.approach_goal_subscription = (
+            self.create_subscription(
+                PoseStamped,
+                '/observe/approach_goal',
+                self.approach_goal_callback,
+                10,
+                callback_group = self.callback_group,
+            )
+        )
+
         self.action_server = ActionServer(
             self,
             ObserveObject,
@@ -169,6 +210,86 @@ Rules:
             f'\n model = {self.model}'
         )
 
+    def approach_goal_callback(
+            self,
+            message: PoseStamped,
+    ) -> None:
+
+        with self.locator_lock:
+            if not self.awaiting_locator_result:
+                return
+
+            self.latest_approach_goal = message
+            self.awaiting_locator_result = False
+            self.locator_event.set()
+
+        self.get_logger().info(
+            '\n ::Approach goal recieved::'
+            f'\n frame_id = {message.header.frame_id}'
+            f'\n x = {message.pose.position.x:.2f}'
+            f'\n y = {message.pose.position.y:.2f}'
+            f'\n orientation_z = {message.pose.orientation.z:.3f}'
+            f'\n orientation_w = {message.pose.orientation.w:.3f}'
+        )
+
+    def request_approach_goal(
+            self,
+            goal_handle,
+            target: DetectedObject,
+    ) -> PoseStamped:
+
+        self.locator_event.clear()
+
+        with self.locator_lock:
+            self.latest_approach_goal = None
+            self.awaiting_locator_result = True
+
+        try:
+            self.get_logger().info(
+                '\n ::locator request published::'
+                f'\n detection_id = {target.detection_id}'
+                f'\n center_x = {target.center_x}'
+                f'\n center_y = {target.center_y}'
+                f'\n width = {target.width}'
+            )
+            self.locator_request_publisher.publish(
+                target
+            )
+            deadline = (
+                time.monotonic()
+                + self.locator_timeout_sec
+            )
+
+            while rclpy.ok():
+                if goal_handle.is_cancel_requested:
+                    raise ObservationCanceledError(
+                        'Observation canceled while waiting for locator'
+                    )
+                if self.locator_event.wait(0.05):
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(
+                        'Observation Locator response time out'
+                    )
+
+            if not rclpy.ok():
+                raise RuntimeError(
+                    'ROS shutdown while waiting for Observation locator'
+                )
+
+            with self.locator_lock:
+                approach_goal = self.latest_approach_goal
+
+            if approach_goal is None:
+                raise RuntimeError(
+                    'Observation loactor returned no approach goal'
+                )
+            return approach_goal
+
+        finally:
+            with self.locator_lock:
+                self.awaiting_locator_result = False
+
 
     def goal_callback(
             self,
@@ -176,7 +297,9 @@ Rules:
     ) -> GoalResponse:
 
         session_id = goal_request.session_id.strip()
+        target = goal_request.target
         encounter = goal_request.encounter
+
 
         if self.openai_client is None:
             self.get_logger().warning(
@@ -192,6 +315,20 @@ Rules:
             )
             return GoalResponse.REJECT
 
+        if not target.detection_id.strip():
+            self.get_logger().warning(
+                '\n ::Observation goal rejected::'
+                '\n target detection_id is empty'
+            )
+            return GoalResponse.REJECT
+
+        if target.width <= 0 or target.height <= 0:
+            self.get_logger().warning(
+                '\n ::Observation goal rejected::'
+                '\n target bounding box is invaild'
+            )
+            return GoalResponse.REJECT
+
         if not encounter.success:
             self.get_logger().warning(
                 '\n ::Observation goal rejected::'
@@ -203,6 +340,13 @@ Rules:
             self.get_logger().warning(
                 '\n ::Observation goal rejected::'
                 '\n detection_id is empty'
+            )
+            return GoalResponse.REJECT
+
+        if target.detection_id != encounter.detection_id:
+            self.get_logger().warning(
+                '\n ::Observation goal rejected::'
+                '\n detection_id of target and encounter do not match'
             )
             return GoalResponse.REJECT
 
@@ -234,6 +378,8 @@ Rules:
             '\n ::Observation goal recieved::'
             f'\n session_id = {session_id}'
             f'\n detection_id = {encounter.detection_id}'
+            f'\n class_name = {target.class_name}'
+            f'\n center = {target.center_x}, {target.center_y}'
             f'\n object_name = {encounter.label.object_name}'
         )
 
@@ -281,8 +427,27 @@ Rules:
 
             self.publish_feedback(
                 goal_handle,
+                'LOCATING',
+                0.35,
+                'Calculating the object approach position',
+            )
+
+            approach_goal = self.request_approach_goal(
+                goal_handle,
+                request.target,
+            )
+
+            self.get_logger().info(
+                '\n ::Object location completed::'
+                f'\n goal_x = {approach_goal.pose.position.x:.2f}'
+                f'\n goal_y = {approach_goal.pose.position.y:.2f}'
+            )
+
+
+            self.publish_feedback(
+                goal_handle,
                 'ANALYZING',
-                0.55,
+                0.65,
                 'Analyzing the object with OpenAI vision',
             )
 
@@ -307,7 +472,7 @@ Rules:
             self.publish_feedback(
                 goal_handle,
                 'SAVING',
-                0.85,
+                0.90,
                 'Saving the observation to world memory',
             )
 
@@ -345,6 +510,16 @@ Rules:
             )
 
             return result
+
+        except ObservationCanceledError as error:
+            self.get_logger().info(
+                f'\n Observation canceled : {error}'
+            )
+            return self.finish_canceled_goal(
+                goal_handle,
+                encounter.detection_id,
+                started_at,
+            )
 
         except Exception as error:
             self.get_logger().error(

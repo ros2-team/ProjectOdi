@@ -3,7 +3,6 @@ import math
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
-from rclpy.duration import Duration
 
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import PointStamped, PoseStamped
@@ -140,7 +139,7 @@ class ObservationLocator(Node):
         """
         scan = self.latest_scan
         if scan is None:
-            self.get_logger().warn('아직 scan 을 못 받음')
+            self.get_logger().warning('아직 scan 을 못 받음')
             return None
 
         u_center = (u_left + u_right) / 2.0
@@ -152,7 +151,7 @@ class ObservationLocator(Node):
 
         r = self.range_between(scan, ang_a, ang_b)
         if r is None:
-            self.get_logger().warn('그 방향에 유효한 scan 값이 없음')
+            self.get_logger().warning('그 방향에 유효한 scan 값이 없음')
             return None
 
         theta = self.pixel_to_bearing(u_center)
@@ -174,7 +173,7 @@ class ObservationLocator(Node):
                 # timeout=Duration(seconds=0.5),
             )
         except Exception as e:
-            self.get_logger().warn('TF lookup 실패: %s' % str(e))
+            self.get_logger().warning('TF lookup 실패: %s' % str(e))
             return None
 
         out = do_transform_point(pt, tf)
@@ -182,7 +181,7 @@ class ObservationLocator(Node):
          # ---- standoff goal 계산 ----
         goal_r = r - self.standoff
         if goal_r < 0.0:
-            self.get_logger().warn('이미 standoff 안쪽 (r=%.2f)' % r)
+            self.get_logger().warning('이미 standoff 안쪽 (r=%.2f)' % r)
             goal_r = 0.0
 
         gp = PointStamped()
