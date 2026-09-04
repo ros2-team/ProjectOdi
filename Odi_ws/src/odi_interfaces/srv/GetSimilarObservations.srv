@@ -1,0 +1,8 @@
+
+odi_interfaces/EncounterResult encounter
+int32 max_results
+---
+bool success
+odi_interfaces/StoredObservation[] observations
+string message
+

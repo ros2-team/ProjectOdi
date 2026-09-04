@@ -1,0 +1,9 @@
+
+string session_id
+string diary_text
+string model_name
+---
+bool success
+string diary_id
+string message
+
