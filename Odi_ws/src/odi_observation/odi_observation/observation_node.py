@@ -255,7 +255,7 @@ Rules:
             self.locator_event.set()
 
         self.get_logger().info(
-            '\n ::Approach goal recieved::'
+            '\n ::Approach goal received::'
             f'\n frame_id = {message.header.frame_id}'
             f'\n x = {message.pose.position.x:.2f}'
             f'\n y = {message.pose.position.y:.2f}'
@@ -300,7 +300,7 @@ Rules:
                     break
                 if time.monotonic() >= deadline:
                     raise RuntimeError(
-                        'Observation Locator response time out'
+                        'Observation Locator response timed out'
                     )
 
             if not rclpy.ok():
@@ -313,7 +313,7 @@ Rules:
 
             if approach_goal is None:
                 raise RuntimeError(
-                    'Observation loactor returned no approach goal'
+                    'Observation locator returned no approach goal'
                 )
             return approach_goal
 
@@ -341,14 +341,14 @@ Rules:
         )
 
     def navigate_to_approach_goal(
-            self,
-            observation_goal_handle,
-            approach_goal: PoseStamped,
+        self,
+        observation_goal_handle,
+        approach_goal: PoseStamped,
     ) -> None:
 
         server_ready = (
             self.navigation_client.wait_for_server(
-                timeout_sec = (
+                timeout_sec=(
                     self.navigation_server_timeout_sec
                 )
             )
@@ -361,13 +361,19 @@ Rules:
 
         navigation_goal = NavigateToPose.Goal()
         navigation_goal.pose = approach_goal
-        navigation_goal.pose.header.stamp = self.get_clock().now().to_msg()
+
+        navigation_goal.pose.header.stamp = (
+            self.get_clock().now().to_msg()
+        )
 
         self.get_logger().info(
-            '\n ::Navigation goal requested::'
-            f'\n frame_id = {navigation_goal.pose.header.frame_id}'
-            f'\n x = {navigation_goal.pose.pose.position.x:.2f}'
-            f'\n y = {navigation_goal.pose.pose.position.y:.2f}'
+            '\n::Navigation goal requested::'
+            f'\nframe_id = '
+            f'{navigation_goal.pose.header.frame_id}'
+            f'\nx = '
+            f'{navigation_goal.pose.pose.position.x:.2f}'
+            f'\ny = '
+            f'{navigation_goal.pose.pose.position.y:.2f}'
         )
 
         send_goal_future = (
@@ -375,6 +381,7 @@ Rules:
                 navigation_goal
             )
         )
+
         send_deadline = time.monotonic() + 10.0
 
         while (
@@ -385,76 +392,96 @@ Rules:
                 raise RuntimeError(
                     'NavigateToPose goal response timed out'
                 )
+
             time.sleep(0.05)
 
-            if not send_goal_future.done():
-                raise RuntimeError(
-                    'ROS shutdown while sending navigation goal'
-                )
-
-            navigation_goal_handle = (
-                send_goal_future.result()
+        if not send_goal_future.done():
+            raise RuntimeError(
+                'ROS shutdown while sending navigation goal'
             )
 
-            if(
-                navigation_goal_handle is None
-                or not navigation_goal_handle.accepted
+        navigation_goal_handle = (
+            send_goal_future.result()
+        )
+
+        if (
+            navigation_goal_handle is None
+            or not navigation_goal_handle.accepted
+        ):
+            raise RuntimeError(
+                'NavigateToPose goal was rejected'
+            )
+
+        self.get_logger().info(
+            'NavigateToPose goal accepted'
+        )
+
+        if observation_goal_handle.is_cancel_requested:
+            self.cancel_navigation_goal(
+                navigation_goal_handle
+            )
+            raise ObservationCanceledError(
+                'Observation canceled before navigation'
+            )
+
+        result_future = (
+            navigation_goal_handle.get_result_async()
+        )
+
+        navigation_deadline = (
+            time.monotonic()
+            + self.navigation_timeout_sec
+        )
+
+        while (
+            rclpy.ok()
+            and not result_future.done()
+        ):
+            if (
+                observation_goal_handle
+                .is_cancel_requested
             ):
-                raise RuntimeError(
-                    'NavigateToPose goal was rejected'
-                )
-
-            self.get_logger().info(
-                'NavigateToPose goal accepted'
-            )
-
-            if observation_goal_handle.is_cancel_requested:
                 self.cancel_navigation_goal(
                     navigation_goal_handle
                 )
                 raise ObservationCanceledError(
-                    'Observation canceled before navigation'
+                    'Observation canceled during navigation'
                 )
 
-            result_future = navigation_goal_handle.get_result_async()
+            if time.monotonic() >= navigation_deadline:
+                self.cancel_navigation_goal(
+                    navigation_goal_handle
+                )
+                raise RuntimeError(
+                    'NavigateToPose navigation timed out'
+                )
 
-            navigation_deadline = (
-                time.monotonic() + self.navigation_timeout_sec
+            time.sleep(0.05)
+
+        if not result_future.done():
+            raise RuntimeError(
+                'ROS shutdown while waiting for navigation'
             )
 
-            while rclpy.ok() and not result_future.done():
-                if observation_goal_handle.is_cancel_requested:
-                    self.cancel_navigation_goal(navigation_goal_handle)
-                    raise ObservationCanceledError(
-                        'Observation canceled during navigation'
-                    )
+        navigation_result = result_future.result()
 
-                if time.monotonic() >= navigation_deadline:
-                    self.cancel_navigation_goal(navigation_goal_handle)
-                    raise RuntimeError(
-                        'NavigateToPose navigation timed out'
-                    )
-                time.sleep(0.05)
-
-            if not result_future.done():
-                raise RuntimeError(
-                    'ROS shutdown while waiting for navigation'
-                )
-
-            navigation_result = result_future.result()
-
-            if navigation_result is None:
-                raise RuntimeError(
-                    'NavigateToPose returned no result'
-                )
-            if navigation_result.status != GoalStatus.STATUS_SUCCEEDED:
-                raise RuntimeError(
-                    f'NavigateToPose failed : status = {navigation_result.status}'
-                )
-            self.get_logger().info(
-                'NavigateToPose completed successfully'
+        if navigation_result is None:
+            raise RuntimeError(
+                'NavigateToPose returned no result'
             )
 
+        if (
+            navigation_result.status
+            != GoalStatus.STATUS_SUCCEEDED
+        ):
+            raise RuntimeError(
+                'NavigateToPose failed: '
+                f'status={navigation_result.status}'
+            )
+
+        self.get_logger().info(
+            'NavigateToPose completed successfully'
+        )
 
 
     def goal_callback(
@@ -491,7 +518,7 @@ Rules:
         if target.width <= 0 or target.height <= 0:
             self.get_logger().warning(
                 '\n ::Observation goal rejected::'
-                '\n target bounding box is invaild'
+                '\n target bounding box is invalid'
             )
             return GoalResponse.REJECT
 
@@ -541,7 +568,7 @@ Rules:
             self.goal_reserved = True
 
         self.get_logger().info(
-            '\n ::Observation goal recieved::'
+            '\n ::Observation goal received::'
             f'\n session_id = {session_id}'
             f'\n detection_id = {encounter.detection_id}'
             f'\n class_name = {target.class_name}'
@@ -1175,7 +1202,6 @@ def main(args=None) -> None:
 
 if __name__ == '__main__':
     main()
-
 
 
 
