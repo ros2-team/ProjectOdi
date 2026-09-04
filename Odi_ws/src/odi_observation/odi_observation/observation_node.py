@@ -9,12 +9,15 @@ import threading
 from pathlib import Path
 from typing import Literal, cast
 from geometry_msgs.msg import PoseStamped
+from action_msgs.msg import GoalStatus
+from nav2_msgs.action import NavigateToPose
 
 from openai import OpenAI
 from openai.types.responses import ResponseInputParam
 
 import rclpy
 from rclpy.action import (
+    ActionClient,
     ActionServer,
     CancelResponse,
     GoalResponse,
@@ -101,6 +104,15 @@ Rules:
             'locator_timeout_sec',
             5.0,
         )
+        self.declare_parameter(
+            'navigation_server_timeout_sec',
+            5.0,
+        )
+        self.declare_parameter(
+            'navigation_timeout_sec',
+            120.0,
+        )
+
 
         openai_timeout_sec = (
             self.get_parameter('openai_timeout_sec')
@@ -116,8 +128,23 @@ Rules:
             self.get_parameter('locator_timeout_sec')
             .get_parameter_value()
             .double_value
-
         )
+        self.navigation_server_timeout_sec = (
+            self.get_parameter(
+                'navigation_server_timeout_sec'
+            )
+            .get_parameter_value()
+            .double_value
+        )
+        self.navigation_timeout_sec = (
+            self.get_parameter(
+                'navigation_timeout_sec'
+            )
+            .get_parameter_value()
+            .double_value
+        )
+
+
 
         self.model = os.getenv(
             'ODI_OPENAI_OBSERVATION_MODEL',
@@ -184,7 +211,6 @@ Rules:
                 10,
             )
         )
-
         self.approach_goal_subscription = (
             self.create_subscription(
                 PoseStamped,
@@ -194,7 +220,12 @@ Rules:
                 callback_group = self.callback_group,
             )
         )
-
+        self.navigation_client = ActionClient(
+            self,
+            NavigateToPose,
+            '/navigate_to_pose',
+            callback_group = self.callback_group,
+        )
         self.action_server = ActionServer(
             self,
             ObserveObject,
@@ -289,6 +320,141 @@ Rules:
         finally:
             with self.locator_lock:
                 self.awaiting_locator_result = False
+
+    def cancel_navigation_goal(
+            self,
+            navigation_goal_handle,
+    ) -> None:
+
+        cancel_future = navigation_goal_handle.cancel_goal_async()
+        deadline = time.monotonic() + 3.0
+
+        while(
+            rclpy.ok()
+            and not cancel_future.done()
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.05)
+
+        self.get_logger().info(
+            'Navigation cancellation requested'
+        )
+
+    def navigate_to_approach_goal(
+            self,
+            observation_goal_handle,
+            approach_goal: PoseStamped,
+    ) -> None:
+
+        server_ready = (
+            self.navigation_client.wait_for_server(
+                timeout_sec = (
+                    self.navigation_server_timeout_sec
+                )
+            )
+        )
+
+        if not server_ready:
+            raise RuntimeError(
+                'NavigateToPose action server is unavailable'
+            )
+
+        navigation_goal = NavigateToPose.Goal()
+        navigation_goal.pose = approach_goal
+        navigation_goal.pose.header.stamp = self.get_clock().now().to_msg()
+
+        self.get_logger().info(
+            '\n ::Navigation goal requested::'
+            f'\n frame_id = {navigation_goal.pose.header.frame_id}'
+            f'\n x = {navigation_goal.pose.pose.position.x:.2f}'
+            f'\n y = {navigation_goal.pose.pose.position.y:.2f}'
+        )
+
+        send_goal_future = (
+            self.navigation_client.send_goal_async(
+                navigation_goal
+            )
+        )
+        send_deadline = time.monotonic() + 10.0
+
+        while (
+            rclpy.ok()
+            and not send_goal_future.done()
+        ):
+            if time.monotonic() >= send_deadline:
+                raise RuntimeError(
+                    'NavigateToPose goal response timed out'
+                )
+            time.sleep(0.05)
+
+            if not send_goal_future.done():
+                raise RuntimeError(
+                    'ROS shutdown while sending navigation goal'
+                )
+
+            navigation_goal_handle = (
+                send_goal_future.result()
+            )
+
+            if(
+                navigation_goal_handle is None
+                or not navigation_goal_handle.accepted
+            ):
+                raise RuntimeError(
+                    'NavigateToPose goal was rejected'
+                )
+
+            self.get_logger().info(
+                'NavigateToPose goal accepted'
+            )
+
+            if observation_goal_handle.is_cancel_requested:
+                self.cancel_navigation_goal(
+                    navigation_goal_handle
+                )
+                raise ObservationCanceledError(
+                    'Observation canceled before navigation'
+                )
+
+            result_future = navigation_goal_handle.get_result_async()
+
+            navigation_deadline = (
+                time.monotonic() + self.navigation_timeout_sec
+            )
+
+            while rclpy.ok() and not result_future.done():
+                if observation_goal_handle.is_cancel_requested:
+                    self.cancel_navigation_goal(navigation_goal_handle)
+                    raise ObservationCanceledError(
+                        'Observation canceled during navigation'
+                    )
+
+                if time.monotonic() >= navigation_deadline:
+                    self.cancel_navigation_goal(navigation_goal_handle)
+                    raise RuntimeError(
+                        'NavigateToPose navigation timed out'
+                    )
+                time.sleep(0.05)
+
+            if not result_future.done():
+                raise RuntimeError(
+                    'ROS shutdown while waiting for navigation'
+                )
+
+            navigation_result = result_future.result()
+
+            if navigation_result is None:
+                raise RuntimeError(
+                    'NavigateToPose returned no result'
+                )
+            if navigation_result.status != GoalStatus.STATUS_SUCCEEDED:
+                raise RuntimeError(
+                    f'NavigateToPose failed : status = {navigation_result.status}'
+                )
+            self.get_logger().info(
+                'NavigateToPose completed successfully'
+            )
+
 
 
     def goal_callback(
@@ -438,16 +604,33 @@ Rules:
             )
 
             self.get_logger().info(
-                '\n ::Object location completed::'
+                '\n ::Object location calculated::'
                 f'\n goal_x = {approach_goal.pose.position.x:.2f}'
                 f'\n goal_y = {approach_goal.pose.position.y:.2f}'
             )
 
+            self.publish_feedback(
+                goal_handle,
+                'APPROACHING',
+                0.50,
+                'Moving to the object approach position',
+            )
+
+            self.navigate_to_approach_goal(
+                goal_handle,
+                approach_goal,
+            )
+
+            self.get_logger().info(
+                '\n ::Object approach completed::'
+                f'\n goal_x = {approach_goal.pose.position.x:.2f}'
+                f'\n goal_y = {approach_goal.pose.position.y:.2f}'
+            )
 
             self.publish_feedback(
                 goal_handle,
                 'ANALYZING',
-                0.65,
+                0.70,
                 'Analyzing the object with OpenAI vision',
             )
 
@@ -692,8 +875,10 @@ Rules:
         return result
 
     def destroy_node(self) -> None:
+        self.navigation_client.destroy()
         self.action_server.destroy()
         super().destroy_node()
+
 
     def analyze_image(
             self,
