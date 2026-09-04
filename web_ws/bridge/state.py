@@ -59,6 +59,8 @@
 # │     ros_link.py  patch / add_discovery / update_discovery
 # │     fake.py      patch / add_discovery / spend_motivation
 # │
+# │     app.py       reset / patch / go_idle  (시작·홈으로 버튼)
+# │
 # │ 여기서 읽는 파일 :
 # │     app.py       snapshot()  →  WebSocket  →  브라우저
 # │
@@ -90,7 +92,13 @@ def blank_state():
     return {
         # 미션 상태 — 화면 라우팅을 결정한다.
         # IDLE | PREPARING | EXPLORING | RETURNING | REFLECTING | COMPLETED
-        "mission": "IDLE",  # ← EXPLORING 에서 바꿈
+        #
+        # ★ 기본값이 IDLE 인 이유
+        #   로봇이 아직 MissionState 를 안 보냈을 때 무엇을 보여줄 것인가.
+        #   EXPLORING 으로 두면 로봇이 꺼져 있어도 빈 탐험 대시보드가 뜬다.
+        #   IDLE 이면 대기(관제) 화면이 뜨고, 로봇이 보고를 시작하면
+        #   그때 알아서 넘어간다. 모를 때는 아무것도 안 하는 쪽이 안전하다.
+        "mission": "IDLE",
 
         # 지금 하고 있는 행동. 화면 상단의 큰 문구가 여기서 나온다.
         # EXPLORE | FIRST_ENCOUNTER | EVALUATE_CURIOSITY | OBSERVE
@@ -115,6 +123,24 @@ def blank_state():
         # ★ 이미지 자체는 여기 안 넣는다. 이유는 frames.py 주석 참조.
         "camera": None,
 
+        # 배터리. {"percent": 87, "charging": False, "ready": True,
+        #          "ready_pct": 40, "at": "10:34:12"}
+        #
+        # ★ 대기 화면에서만 쓴다.
+        #   탐험 중에 배터리 퍼센트가 보이면 화면이 관제 대시보드가 되어
+        #   캐릭터가 죽는다. 대기 화면에서는 '나갈 수 있는 상태인가' 라는
+        #   출발 조건이라 성격이 다르다.
+        #
+        # ★ ready 는 브리지가 계산해서 내려준다.
+        #   문턱값(config.BATTERY_READY_PCT)을 프론트에도 적어두면
+        #   config 만 고치고 자바스크립트를 안 고치는 사고가 난다.
+        "battery": None,
+
+        # 온·습도. 센서가 확정되면 채운다. 그때까지는 계속 None.
+        # 대기 화면에 자리만 잡아뒀다.
+        # 기대하는 모양 : {"temp_c": 24.3, "humidity": 61, "at": "10:34:12"}
+        "env": None,
+
         # 지도. {"seq", "url", "width", "height", "path", "pose", "markers"}
         "map": None,
 
@@ -125,6 +151,25 @@ def blank_state():
 
 # 프로그램이 살아있는 동안 유지되는 실제 상태
 STATE = blank_state()
+
+
+# 사용자가 완료 보고를 이미 확인했는가.
+#
+# ★ 이게 왜 필요한가
+#   탐험이 끝나면 로봇은 COMPLETED 를 1Hz 로 계속 보고한다.
+#   사용자가 일기를 다 읽고 [홈으로] 를 눌러 IDLE 로 돌아와도,
+#   1 초 뒤 다시 COMPLETED 가 되면서 일기 화면으로 튕겨 돌아간다.
+#   대기 화면으로 나갈 길이 구조적으로 막히는 것이다.
+#
+#   "이 완료 보고는 이미 확인했다" 를 기억해두면,
+#   로봇이 계속 쏘든 말든 화면은 대기 상태에 머물 수 있다.
+#
+# ★ 왜 session_id 비교가 아니라 단순 플래그인가
+#   처음에는 '확인한 세션 번호' 를 저장해 비교했는데,
+#   로봇이 session_id 를 언제 어떤 값으로 보내는지에 의존하게 된다.
+#   빈 문자열로 오거나 mission 보다 늦게 오면 비교가 어긋나 방어가 풀린다.
+#   플래그 하나 + "새 탐험이 시작되면 reset() 이 푼다" 규칙이 더 튼튼하다.
+_dismissed = False
 
 
 # ════════════════════════════════════════════════════════════
@@ -159,26 +204,49 @@ def snapshot():
 # 쓰기 — ros_link.py / fake.py 가 쓴다
 # ════════════════════════════════════════════════════════════
 
-
-def patch(**fields):
-    with LOCK:
-        for k, v in fields.items():
-            if v is None:
-                continue
-            # 이미 확인한 세션의 완료 보고는 무시한다 (go_idle 주석 참조)
-            if (k == "mission" and v == "COMPLETED"
-                    and _dismissed is not None
-                    and _dismissed == STATE.get("session_id")):
-                continue
-            STATE[k] = v
-
-
 def reset():
+    """상태를 초기값으로 되돌린다. 새 탐험을 시작할 때 호출.
+
+    ★ STATE = blank_state() 라고 쓰면 안 되는 이유
+      그건 이 모듈의 STATE 라는 '이름'이 새 딕셔너리를 가리키게 할 뿐이다.
+      다른 모듈이 이미 import 해 간 옛 딕셔너리는 그대로 남아서,
+      그쪽에서는 초기화가 안 된 것처럼 보인다.
+      clear() + update() 로 '같은 객체의 내용'을 바꿔야 모두에게 반영된다.
+    """
     global _dismissed
     with LOCK:
         STATE.clear()
         STATE.update(blank_state())
-        _dismissed = None       # 새 탐험이므로 확인 기록을 지운다
+
+        # 새 탐험이므로 '완료를 확인했다' 기록을 푼다.
+        # 이게 없으면 두 번째 탐험이 끝나도 COMPLETED 가 막혀서
+        # 일기 화면으로 넘어가지 않는다.
+        _dismissed = False
+
+
+def patch(**fields):
+    """최상위 필드 여러 개를 한 번에 갱신한다.
+
+        patch(mission="RETURNING", motivation=0.3)
+
+    ** 는 키워드 인자를 딕셔너리로 모아주는 파이썬 문법이다.
+    patch(a=1, b=2) 로 부르면 함수 안에서 fields == {"a": 1, "b": 2} 가 된다.
+
+    None 인 값은 무시한다. 덕분에 호출하는 쪽에서
+    '값이 있으면 갱신, 없으면 그대로' 를 따로 if 없이 쓸 수 있다.
+
+    ★ COMPLETED 만 예외적으로 막힐 수 있다
+      사용자가 [홈으로] 를 눌러 대기 화면으로 나온 뒤에는
+      로봇이 계속 보내는 COMPLETED 를 무시한다.
+      자세한 이유는 _dismissed 와 go_idle() 의 주석 참조.
+    """
+    with LOCK:
+        for k, v in fields.items():
+            if v is None:
+                continue
+            if k == "mission" and v == "COMPLETED" and _dismissed:
+                continue
+            STATE[k] = v
 
 
 def spend_motivation(amount):
@@ -238,3 +306,25 @@ def update_discovery(detection_id, **fields):
                 d.update(fields)
                 return True
     return False
+
+def go_idle():
+    """화면을 대기(관제) 상태로 되돌린다.
+
+    일기 화면의 [홈으로] 와, 준비 화면의 [대기 화면으로] 가 부른다.
+    (app.py 의 POST /sessions/home)
+
+    ★ reset() 과 무엇이 다른가
+        reset()   발견 목록까지 전부 지운다. 새 탐험을 시작할 때.
+        go_idle() 상태만 IDLE 로 바꾼다. 데이터는 남긴다.
+
+      일기를 다시 열었을 때 그 데이터가 아직 필요하기 때문이다.
+
+    ★ 왜 patch(mission="IDLE") 로 끝내지 않는가
+      로봇이 COMPLETED 를 1Hz 로 계속 보고하고 있으면
+      1 초 뒤에 그대로 덮어써진다. _dismissed 를 함께 세워야
+      그 뒤의 완료 보고가 무시된다.
+    """
+    global _dismissed
+    with LOCK:
+        _dismissed = True
+        STATE["mission"] = "IDLE"
