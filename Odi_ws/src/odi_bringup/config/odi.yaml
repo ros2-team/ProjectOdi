@@ -1,0 +1,36 @@
+exploration_node:
+  ros__parameters:
+    map_topic: /map
+    robot_frame: base_footprint
+    navigation_action_name: /navigate_to_pose
+    minimum_frontier_size: 5
+    visited_goal_radius: 0.6
+    minimum_goal_distance: 0.5
+    maximum_goal_distance: 5.0
+    obstacle_clearance: 0.25
+    map_wait_timeout_sec: 10.0
+    navigation_server_timeout_sec: 5.0
+    navigation_timeout_sec: 120.0
+    maximum_navigation_failures: 5
+    roam_sampling_step: 8
+
+return_home_node:
+  ros__parameters:
+    map_frame: map
+    robot_frame: base_footprint
+    navigation_action_name: /navigate_to_pose
+    use_configured_home: false
+    home_x: 0.0
+    home_y: 0.0
+    home_yaw: 0.0
+    home_wait_timeout_sec: 10.0
+    navigation_server_timeout_sec: 5.0
+    navigation_timeout_sec: 180.0
+
+yolo_node:
+  ros__parameters:
+    model_path: yolov8n.pt
+    confidence: 0.5
+    process_every_n_frames: 3
+    lost_frame_threshold: 30
+    device: cpu
