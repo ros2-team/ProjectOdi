@@ -19,20 +19,14 @@ def generate_launch_description() -> LaunchDescription:
         'odi.yaml',
     )
 
-    use_perception = LaunchConfiguration('use_perception')
-    use_tracker = LaunchConfiguration('use_tracker')
+    use_detection = LaunchConfiguration('use_detection')
     use_world_memory = LaunchConfiguration('use_world_memory')
 
     return LaunchDescription([
         DeclareLaunchArgument(
-            'use_perception',
+            'use_detection',
             default_value='true',
             description='Run the YOLO detector',
-        ),
-        DeclareLaunchArgument(
-            'use_tracker',
-            default_value='true',
-            description='Run the pan/tilt tracker',
         ),
         DeclareLaunchArgument(
             'use_world_memory',
@@ -52,19 +46,12 @@ def generate_launch_description() -> LaunchDescription:
             output='screen',
         ),
         Node(
-            package='perception',
+            package='odi_detection',
             executable='yolo_node',
             name='yolo_node',
             output='screen',
             parameters=[parameters_file],
-            condition=IfCondition(use_perception),
-        ),
-        Node(
-            package='odi_tracker',
-            executable='tracker_node',
-            name='tracker_node',
-            output='screen',
-            condition=IfCondition(use_tracker),
+            condition=IfCondition(use_detection),
         ),
         Node(
             package='odi_exploration',
