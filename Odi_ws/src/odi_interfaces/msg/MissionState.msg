@@ -1,5 +1,5 @@
-
-string	state
-string	detail
+string session_id
+string state
+string detail
 builtin_interfaces/Time updated_at
 

@@ -1,4 +1,5 @@
-
+string session_id
+odi_interfaces/DetectedObject target
 odi_interfaces/EncounterResult encounter
 odi_interfaces/CuriosityDecision decision
 ---
