@@ -95,6 +95,7 @@ const el = {
   screen: $('screen'), exploring: $('exploring'),
   phase: $('phase'), mode: $('mode'), head: $('head'), clock: $('clock'),
   fill: $('fill'), drive: $('drive'), cam: $('cam'), shotAt: $('shotAt'),
+  stopBtn: $('stopBtn'),
   mapbox: $('mapbox'), queue: $('queue'), feed: $('feed'),
   offline: $('offline'), offlineMsg: $('offlineMsg'), offlineAge: $('offlineAge')
 };
@@ -489,6 +490,7 @@ async function goHome(){
 
 function paintExploring(){
   const returning = S.mission === 'RETURNING';
+  el.stopBtn.hidden = returning;
 
   /* 상단 상태 줄.
      FIRST_ENCOUNTER 같은 상태 이름을 그대로 띄우면 '로그'가 된다.
@@ -521,6 +523,20 @@ function paintExploring(){
   paintMap();
   paintFeed();
 }
+
+async function stopMission(){
+  el.stopBtn.disabled = true;
+  el.stopBtn.textContent = '복귀 요청 중…';
+  try{
+    const res = await fetch('/sessions/stop', {method: 'POST'});
+    if(!res.ok) throw new Error(res.status);
+  }catch(e){
+    el.stopBtn.disabled = false;
+    el.stopBtn.textContent = '다시 시도';
+  }
+}
+
+el.stopBtn.addEventListener('click', stopMission);
 
 
 /* MJPEG 스트림은 <img> 를 딱 한 번만 만들고 다시는 건드리지 않는다.
