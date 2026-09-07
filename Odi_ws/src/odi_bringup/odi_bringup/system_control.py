@@ -94,7 +94,9 @@ def _run_remote(action: str) -> int:
     return completed.returncode
 
 
-def main_start() -> None:
+def _start_system(
+    default_launch_arguments: list[str] | None = None,
+) -> None:
     parser = argparse.ArgumentParser(
         description='Start the complete ODI robot system.'
     )
@@ -104,6 +106,12 @@ def main_start() -> None:
         help='Do not stop Raspberry Pi nodes when local launch exits.',
     )
     args, launch_arguments = parser.parse_known_args()
+
+    if default_launch_arguments:
+        launch_arguments = [
+            *default_launch_arguments,
+            *launch_arguments,
+        ]
 
     if _run_remote('start') != 0:
         raise SystemExit('Failed to start Raspberry Pi nodes')
@@ -133,6 +141,25 @@ def main_start() -> None:
             _run_remote('stop')
 
     raise SystemExit(return_code)
+
+
+def main_start() -> None:
+    _start_system()
+
+
+def main_robot_start() -> None:
+    _start_system(['use_application:=false'])
+
+
+def main_project_start() -> None:
+    command = [
+        'ros2',
+        'launch',
+        'odi_bringup',
+        'odi_integration.launch.py',
+        *sys.argv[1:],
+    ]
+    raise SystemExit(subprocess.call(command))
 
 
 def main_stop() -> None:
