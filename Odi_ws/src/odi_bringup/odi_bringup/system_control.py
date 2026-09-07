@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -16,11 +17,19 @@ def _robot_host() -> str:
 
 
 def _remote_script(action: str) -> str:
+    ros_domain_id = shlex.quote(
+        os.environ.get('ROS_DOMAIN_ID', '0')
+    )
+    ros_localhost_only = shlex.quote(
+        os.environ.get('ROS_LOCALHOST_ONLY', '0')
+    )
     setup_commands = (
         'source /opt/ros/humble/setup.bash; '
         'if [ -f "$HOME/turtlebot3_ws/install/setup.bash" ]; '
         'then source "$HOME/turtlebot3_ws/install/setup.bash"; fi; '
-        'export TURTLEBOT3_MODEL=waffle_pi'
+        'export TURTLEBOT3_MODEL=waffle_pi; '
+        f'export ROS_DOMAIN_ID={ros_domain_id}; '
+        f'export ROS_LOCALHOST_ONLY={ros_localhost_only}'
     )
 
     if action == 'start':
