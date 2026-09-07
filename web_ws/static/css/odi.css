@@ -98,6 +98,10 @@ button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--lamp);outl
                font-size:11px;letter-spacing:.06em;color:var(--on-ink-faint);margin-top:9px}
 .gauge .labels b{font-weight:400;font-family:var(--data);color:var(--on-ink-dim);transition:color .3s}
 .gauge .labels b.spent{color:var(--lamp)}
+.stop-mission{display:block;margin:13px 0 0 auto;padding:7px 13px;border:1px solid var(--ink-line);
+              border-radius:999px;color:var(--on-ink-dim);font-size:11px;letter-spacing:.04em}
+.stop-mission:hover{border-color:var(--lamp);color:var(--lamp)}
+.stop-mission:disabled{opacity:.45;cursor:default}
 
 /* ── 2단 레이아웃 ─────────────────────────────────────── */
 .cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:20px}
