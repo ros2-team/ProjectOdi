@@ -1,7 +1,7 @@
 """설정을 한 곳에 모은다. 발표 직전에 바꿀 값들은 전부 여기 있어야 한다."""
 
 # ┌─ 연결 지도 ────────────────────────────────────────────────
-# │ 이 파일은 아무것도 import 하지 않는다. 값만 있다.
+# │ 실행 환경과 연동되는 값은 환경 변수에서 읽는다.
 # │
 # │ 이 파일을 읽어가는 곳 :
 # │     run.py       → USE_FAKE, HOST, PORT
@@ -20,7 +20,7 @@ BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"  # 웹 정적 파일(HTML, CSS, JS) 위치
 
 # ── 서버 설정 ────────────────────────────────────────────
-HOST = "0.0.0.0"  # 외부 모든 IP 접근 허용
+HOST = os.getenv("ODI_WEB_HOST", "127.0.0.1")
 PORT = 8000  # 웹 서버 포트 번호
 PUSH_HZ = 1.0  # WebSocket으로 웹 화면에 상태 정보를 보낼 주기 (초당 1회)
 
@@ -62,15 +62,16 @@ TOPIC_COMMAND = "/mission/command"
 # 웹은 이 폴더를 /media/obs/파일명 으로 서빙한다.
 # 로봇이 다른 폴더에 저장하면 심볼릭 링크를 걸거나 이 값을 맞춘다.
 DATASET_DIR = Path(
-    os.getenv("ODI_DATASET_DIR", str(Path.home() / "ProjectOdi_data"))
-).expanduser()
+    os.path.expanduser(
+        os.getenv("ODI_DATASET_DIR", "~/ProjectOdi_data")
+    )
+)
 PHOTO_DIR = DATASET_DIR / "first_encounter"
 
 # ── 3단계: 데이터베이스 설정 ──────────────────────────────
-# 브리지는 detected_objects 를 읽기만 한다. 쓰는 건 세션 테이블뿐.
-# 호기심 노드와 커넥션을 공유하지 않는다.
+# 웹은 미션, 관찰, 일기 데이터를 읽기만 한다.
 DB = {
-    "host": os.getenv("ODI_DB_HOST", "localhost"),
+    "host": os.getenv("ODI_DB_HOST", "127.0.0.1"),
     "port": int(os.getenv("ODI_DB_PORT", "3306")),
     "user": os.getenv("ODI_DB_USER", "odi_user"),
     "password": os.getenv("ODI_DB_PASSWORD", ""),
