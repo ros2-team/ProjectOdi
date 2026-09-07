@@ -43,12 +43,17 @@ class ExplorationNode(Node):
         self.latest_map = None
         self.current_session_id = ''
         self.visited_goals: list[tuple[float, float]] = []
+        self.failed_goals: list[tuple[float, float]] = []
 
         self._declare_parameters()
         self._read_parameters()
 
         self.frontier_detector = FrontierDetector(
             minimum_frontier_size=self.minimum_frontier_size,
+            information_gain_weight=(
+                self.frontier_information_gain_weight
+            ),
+            distance_weight=self.frontier_distance_weight,
         )
 
         map_qos = QoSProfile(
@@ -94,16 +99,25 @@ class ExplorationNode(Node):
         self.declare_parameter('map_topic', '/map')
         self.declare_parameter('robot_frame', 'base_footprint')
         self.declare_parameter('navigation_action_name', '/navigate_to_pose')
-        self.declare_parameter('minimum_frontier_size', 5)
-        self.declare_parameter('visited_goal_radius', 0.6)
+        self.declare_parameter('minimum_frontier_size', 3)
+        self.declare_parameter('visited_goal_radius', 0.35)
+        self.declare_parameter('failed_goal_radius', 0.35)
         self.declare_parameter('minimum_goal_distance', 0.5)
         self.declare_parameter('maximum_goal_distance', 5.0)
+        self.declare_parameter('frontier_goal_offset', 0.3)
+        self.declare_parameter('frontier_empty_retry_count', 4)
+        self.declare_parameter('frontier_retry_delay_sec', 1.0)
+        self.declare_parameter('frontier_information_gain_weight', 1.0)
+        self.declare_parameter('frontier_distance_weight', 0.35)
         self.declare_parameter('obstacle_clearance', 0.25)
         self.declare_parameter('map_wait_timeout_sec', 10.0)
         self.declare_parameter('navigation_server_timeout_sec', 5.0)
         self.declare_parameter('navigation_timeout_sec', 120.0)
         self.declare_parameter('maximum_navigation_failures', 5)
-        self.declare_parameter('roam_sampling_step', 8)
+        self.declare_parameter('roam_sampling_step', 5)
+        self.declare_parameter('roam_minimum_goal_distance', 1.0)
+        self.declare_parameter('roam_maximum_goal_distance', 3.0)
+        self.declare_parameter('roam_direction_weight', 0.8)
 
     def _read_parameters(self) -> None:
         """Read declared parameters into ordinary attributes."""
@@ -118,11 +132,29 @@ class ExplorationNode(Node):
         self.visited_goal_radius = self.get_parameter(
             'visited_goal_radius'
         ).value
+        self.failed_goal_radius = self.get_parameter(
+            'failed_goal_radius'
+        ).value
         self.minimum_goal_distance = self.get_parameter(
             'minimum_goal_distance'
         ).value
         self.maximum_goal_distance = self.get_parameter(
             'maximum_goal_distance'
+        ).value
+        self.frontier_goal_offset = self.get_parameter(
+            'frontier_goal_offset'
+        ).value
+        self.frontier_empty_retry_count = self.get_parameter(
+            'frontier_empty_retry_count'
+        ).value
+        self.frontier_retry_delay_sec = self.get_parameter(
+            'frontier_retry_delay_sec'
+        ).value
+        self.frontier_information_gain_weight = self.get_parameter(
+            'frontier_information_gain_weight'
+        ).value
+        self.frontier_distance_weight = self.get_parameter(
+            'frontier_distance_weight'
         ).value
         self.obstacle_clearance = self.get_parameter(
             'obstacle_clearance'
@@ -141,6 +173,15 @@ class ExplorationNode(Node):
         ).value
         self.roam_sampling_step = self.get_parameter(
             'roam_sampling_step'
+        ).value
+        self.roam_minimum_goal_distance = self.get_parameter(
+            'roam_minimum_goal_distance'
+        ).value
+        self.roam_maximum_goal_distance = self.get_parameter(
+            'roam_maximum_goal_distance'
+        ).value
+        self.roam_direction_weight = self.get_parameter(
+            'roam_direction_weight'
         ).value
 
     def map_callback(self, message: OccupancyGrid) -> None:
@@ -176,6 +217,7 @@ class ExplorationNode(Node):
             if session_id != self.current_session_id:
                 self.current_session_id = session_id
                 self.visited_goals.clear()
+                self.failed_goals.clear()
 
         self.get_logger().info(
             '\n::Explore goal received::'
@@ -195,6 +237,7 @@ class ExplorationNode(Node):
         mode = request.mode.strip().upper()
         last_area_id = ''
         navigation_failures = 0
+        empty_frontier_checks = 0
 
         try:
             if not self._wait_for_map(goal_handle):
@@ -214,7 +257,9 @@ class ExplorationNode(Node):
                     )
 
                 try:
-                    robot_x, robot_y = self._get_robot_position()
+                    robot_x, robot_y, robot_yaw = (
+                        self._get_robot_pose()
+                    )
                 except Exception as error:  # noqa: BLE001
                     return self._finish_aborted(
                         goal_handle,
@@ -228,17 +273,32 @@ class ExplorationNode(Node):
                         robot_y,
                     )
                     if selected is None:
+                        empty_frontier_checks += 1
+                        if (
+                            empty_frontier_checks
+                            <= self.frontier_empty_retry_count
+                        ):
+                            self.get_logger().info(
+                                'No frontier candidate; waiting for '
+                                'a newer map '
+                                f'({empty_frontier_checks}/'
+                                f'{self.frontier_empty_retry_count})'
+                            )
+                            time.sleep(self.frontier_retry_delay_sec)
+                            continue
                         return self._finish_succeeded(
                             goal_handle,
                             status='FRONTIER_EXHAUSTED',
                             visited_area_id=last_area_id,
                             message='No unvisited frontier remains',
                         )
+                    empty_frontier_checks = 0
                     area_id, goal_pose = selected
                 else:
                     selected = self._select_roam_goal(
                         robot_x,
                         robot_y,
+                        robot_yaw,
                     )
                     if selected is None:
                         self.visited_goals.clear()
@@ -281,14 +341,13 @@ class ExplorationNode(Node):
                         message,
                     )
 
-                self.visited_goals.append(
-                    (
-                        goal_pose.pose.position.x,
-                        goal_pose.pose.position.y,
-                    )
-                )
-
                 if outcome == NavigationOutcome.SUCCEEDED:
+                    self.visited_goals.append(
+                        (
+                            goal_pose.pose.position.x,
+                            goal_pose.pose.position.y,
+                        )
+                    )
                     navigation_failures = 0
                     self.get_logger().info(
                         f'Exploration area reached: {area_id}'
@@ -296,6 +355,14 @@ class ExplorationNode(Node):
                     time.sleep(0.3)
                     continue
 
+                self.failed_goals.append(
+                    (
+                        goal_pose.pose.position.x,
+                        goal_pose.pose.position.y,
+                    )
+                )
+                if len(self.failed_goals) > 100:
+                    self.failed_goals = self.failed_goals[-100:]
                 navigation_failures += 1
                 self.get_logger().warning(message)
 
@@ -354,17 +421,29 @@ class ExplorationNode(Node):
             )
         return True
 
-    def _get_robot_position(self) -> tuple[float, float]:
-        """Read the robot position in the map frame from TF."""
+    def _get_robot_pose(self) -> tuple[float, float, float]:
+        """Read the robot position and yaw in the map frame from TF."""
         transform = self.tf_buffer.lookup_transform(
             'map',
             self.robot_frame,
             Time(),
             timeout=Duration(seconds=1.0),
         )
+        rotation = transform.transform.rotation
+        yaw = math.atan2(
+            2.0 * (
+                rotation.w * rotation.z
+                + rotation.x * rotation.y
+            ),
+            1.0 - 2.0 * (
+                rotation.y * rotation.y
+                + rotation.z * rotation.z
+            ),
+        )
         return (
             transform.transform.translation.x,
             transform.transform.translation.y,
+            yaw,
         )
 
     def _select_frontier_goal(
@@ -381,22 +460,31 @@ class ExplorationNode(Node):
         )
 
         for candidate in candidates:
-            if not self._distance_is_allowed(candidate.distance):
-                continue
-            if self._was_visited(candidate.world_x, candidate.world_y):
-                continue
-            if not self._cell_has_clearance(
+            approach = self._find_frontier_approach(
                 map_message,
                 candidate.cell_x,
                 candidate.cell_y,
-                allow_unknown=True,
-            ):
+                candidate.world_x,
+                candidate.world_y,
+                robot_x,
+                robot_y,
+            )
+            if approach is None:
+                continue
+            goal_x, goal_y = approach
+            goal_distance = math.hypot(
+                goal_x - robot_x,
+                goal_y - robot_y,
+            )
+            if not self._distance_is_allowed(goal_distance):
+                continue
+            if self._was_attempted(goal_x, goal_y):
                 continue
 
             area_id = f'frontier_{candidate.cell_x}_{candidate.cell_y}'
             pose = self._make_goal_pose(
-                candidate.world_x,
-                candidate.world_y,
+                goal_x,
+                goal_y,
                 robot_x,
                 robot_y,
             )
@@ -408,8 +496,9 @@ class ExplorationNode(Node):
         self,
         robot_x: float,
         robot_y: float,
+        robot_yaw: float,
     ) -> tuple[str, PoseStamped] | None:
-        """Choose a distant safe free cell when no frontier remains."""
+        """Choose a safe cell with useful distance and heading continuity."""
         map_message = self._get_latest_map()
         width = map_message.info.width
         height = map_message.info.height
@@ -439,12 +528,45 @@ class ExplorationNode(Node):
                     world_x - robot_x,
                     world_y - robot_y,
                 )
-                if not self._distance_is_allowed(distance):
+                if not (
+                    self.roam_minimum_goal_distance
+                    <= distance
+                    <= self.roam_maximum_goal_distance
+                ):
                     continue
-                if self._was_visited(world_x, world_y):
+                if self._was_attempted(world_x, world_y):
                     continue
+
+                target_distance = (
+                    self.roam_minimum_goal_distance
+                    + self.roam_maximum_goal_distance
+                ) / 2.0
+                distance_span = max(
+                    self.roam_maximum_goal_distance
+                    - self.roam_minimum_goal_distance,
+                    0.1,
+                )
+                distance_score = max(
+                    0.0,
+                    1.0
+                    - abs(distance - target_distance)
+                    / distance_span,
+                )
+                goal_heading = math.atan2(
+                    world_y - robot_y,
+                    world_x - robot_x,
+                )
+                heading_score = (
+                    1.0
+                    + math.cos(goal_heading - robot_yaw)
+                ) / 2.0
+                score = (
+                    distance_score
+                    + self.roam_direction_weight
+                    * heading_score
+                )
                 candidates.append(
-                    (distance, cell_x, cell_y, world_x, world_y)
+                    (score, cell_x, cell_y, world_x, world_y)
                 )
 
         if not candidates:
@@ -477,7 +599,7 @@ class ExplorationNode(Node):
         )
 
     def _was_visited(self, world_x: float, world_y: float) -> bool:
-        """Check whether a nearby goal was already attempted this session."""
+        """Check whether a nearby goal was reached this session."""
         return any(
             math.hypot(
                 world_x - visited_x,
@@ -485,6 +607,99 @@ class ExplorationNode(Node):
             ) < self.visited_goal_radius
             for visited_x, visited_y in self.visited_goals
         )
+
+    def _was_attempted(self, world_x: float, world_y: float) -> bool:
+        """Reject goals near previously reached or failed destinations."""
+        if self._was_visited(world_x, world_y):
+            return True
+        return any(
+            math.hypot(
+                world_x - failed_x,
+                world_y - failed_y,
+            ) < self.failed_goal_radius
+            for failed_x, failed_y in self.failed_goals
+        )
+
+    def _find_frontier_approach(
+        self,
+        map_message: OccupancyGrid,
+        frontier_cell_x: int,
+        frontier_cell_y: int,
+        frontier_x: float,
+        frontier_y: float,
+        robot_x: float,
+        robot_y: float,
+    ) -> tuple[float, float] | None:
+        """Find a fully known safe goal slightly inside a frontier."""
+        resolution = map_message.info.resolution
+        width = map_message.info.width
+        height = map_message.info.height
+        to_robot_x = robot_x - frontier_x
+        to_robot_y = robot_y - frontier_y
+        robot_distance = math.hypot(to_robot_x, to_robot_y)
+
+        if robot_distance < 0.001:
+            return None
+
+        unit_x = to_robot_x / robot_distance
+        unit_y = to_robot_y / robot_distance
+        desired_x = frontier_x + unit_x * self.frontier_goal_offset
+        desired_y = frontier_y + unit_y * self.frontier_goal_offset
+        search_radius = max(
+            1,
+            math.ceil(
+                (
+                    self.frontier_goal_offset
+                    + self.obstacle_clearance
+                )
+                / resolution
+            ),
+        )
+        safe_cells = []
+
+        for cell_y in range(
+            frontier_cell_y - search_radius,
+            frontier_cell_y + search_radius + 1,
+        ):
+            for cell_x in range(
+                frontier_cell_x - search_radius,
+                frontier_cell_x + search_radius + 1,
+            ):
+                if not (0 <= cell_x < width and 0 <= cell_y < height):
+                    continue
+                index = cell_y * width + cell_x
+                if map_message.data[index] != FrontierDetector.FREE:
+                    continue
+                if not self._cell_has_clearance(
+                    map_message,
+                    cell_x,
+                    cell_y,
+                    allow_unknown=False,
+                ):
+                    continue
+
+                world_x, world_y = FrontierDetector.cell_to_world(
+                    cell_x,
+                    cell_y,
+                    map_message,
+                )
+                inward_projection = (
+                    (world_x - frontier_x) * unit_x
+                    + (world_y - frontier_y) * unit_y
+                )
+                if inward_projection <= 0.0:
+                    continue
+                score = math.hypot(
+                    world_x - desired_x,
+                    world_y - desired_y,
+                )
+                safe_cells.append((score, world_x, world_y))
+
+        if not safe_cells:
+            return None
+
+        _, goal_x, goal_y = min(safe_cells)
+        return goal_x, goal_y
 
     def _cell_has_clearance(
         self,
