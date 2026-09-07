@@ -2,13 +2,15 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>odi_bringup</name>
-  <version>0.1.0</version>
-  <description>Integrated launch configuration for ODI.</description>
+  <version>0.2.0</version>
+  <description>Integrated launch and system control for ODI.</description>
   <maintainer email="kws991108@gmail.com">ssu4645</maintainer>
   <license>Apache-2.0</license>
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>turtlebot3_cartographer</exec_depend>
   <exec_depend>odi_behavior_executor</exec_depend>
   <exec_depend>odi_curiosity_engine</exec_depend>
   <exec_depend>odi_detection</exec_depend>
