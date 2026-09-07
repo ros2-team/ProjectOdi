@@ -2,10 +2,11 @@
 """
 Odi 웹 브리지 진입점.
 
-    source ~/projectOdi/Odi_ws/install/setup.bash    # 2단계부터 필요
+    source ~/ProjectOdi_assembly/Odi_ws/install/setup.bash
+    cd ~/ProjectOdi_assembly/web_ws
     python3 run.py
 
-브라우저에서 http://<로봇IP>:8000
+브라우저에서 http://127.0.0.1:8000
 """
 
 import threading
