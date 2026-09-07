@@ -1,7 +1,8 @@
-"""One-command launcher for the ODI robot and main-PC processes."""
+"""One-command launcher for the ODI robot, application, and web dashboard."""
 
 import argparse
 import os
+from pathlib import Path
 import shlex
 import signal
 import subprocess
@@ -17,9 +18,7 @@ def _robot_host() -> str:
 
 
 def _remote_script(action: str) -> str:
-    ros_domain_id = shlex.quote(
-        os.environ.get('ROS_DOMAIN_ID', '0')
-    )
+    ros_domain_id = shlex.quote(os.environ.get('ROS_DOMAIN_ID', '0'))
     ros_localhost_only = shlex.quote(
         os.environ.get('ROS_LOCALHOST_ONLY', '0')
     )
@@ -94,8 +93,68 @@ def _run_remote(action: str) -> int:
     return completed.returncode
 
 
+def _web_run_path() -> Path:
+    configured_root = os.environ.get('ODI_PROJECT_ROOT')
+    candidates = []
+    if configured_root:
+        candidates.append(Path(configured_root).expanduser() / 'web_ws' / 'run.py')
+    candidates.extend([
+        Path.cwd() / 'web_ws' / 'run.py',
+        Path.home() / 'ProjectOdi_assembly' / 'web_ws' / 'run.py',
+    ])
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+
+    checked = ', '.join(str(path) for path in candidates)
+    raise FileNotFoundError(
+        'web_ws/run.py was not found. Set ODI_PROJECT_ROOT. '
+        f'Checked: {checked}'
+    )
+
+
+def _stop_process(process: subprocess.Popen | None) -> None:
+    if process is None or process.poll() is not None:
+        return
+    os.killpg(process.pid, signal.SIGINT)
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGTERM)
+        process.wait(timeout=5)
+
+
+def _run_local_stack(
+    command: list[str],
+    start_web: bool = True,
+) -> int:
+    web_path = _web_run_path() if start_web else None
+    launch_process = None
+    web_process = None
+
+    try:
+        if web_path is not None:
+            web_process = subprocess.Popen(
+                [sys.executable, str(web_path)],
+                cwd=web_path.parent,
+                start_new_session=True,
+            )
+        launch_process = subprocess.Popen(
+            command,
+            start_new_session=True,
+        )
+        return launch_process.wait()
+    except KeyboardInterrupt:
+        return 130
+    finally:
+        _stop_process(launch_process)
+        _stop_process(web_process)
+
+
 def _start_system(
     default_launch_arguments: list[str] | None = None,
+    start_web: bool = True,
 ) -> None:
     parser = argparse.ArgumentParser(
         description='Start the complete ODI robot system.'
@@ -108,34 +167,20 @@ def _start_system(
     args, launch_arguments = parser.parse_known_args()
 
     if default_launch_arguments:
-        launch_arguments = [
-            *default_launch_arguments,
-            *launch_arguments,
-        ]
+        launch_arguments = [*default_launch_arguments, *launch_arguments]
 
     if _run_remote('start') != 0:
         raise SystemExit('Failed to start Raspberry Pi nodes')
 
     command = [
-        'ros2',
-        'launch',
-        'odi_bringup',
-        'odi_system.launch.py',
+        'ros2', 'launch', 'odi_bringup', 'odi_system.launch.py',
         *launch_arguments,
     ]
-    process = None
-
     try:
-        process = subprocess.Popen(
+        return_code = _run_local_stack(
             command,
-            start_new_session=True,
+            start_web=start_web,
         )
-        return_code = process.wait()
-    except KeyboardInterrupt:
-        return_code = 130
-        if process is not None and process.poll() is None:
-            os.killpg(process.pid, signal.SIGINT)
-            process.wait()
     finally:
         if not args.keep_robot_running:
             _run_remote('stop')
@@ -148,18 +193,18 @@ def main_start() -> None:
 
 
 def main_robot_start() -> None:
-    _start_system(['use_application:=false'])
+    _start_system(
+        ['use_application:=false'],
+        start_web=False,
+    )
 
 
 def main_project_start() -> None:
     command = [
-        'ros2',
-        'launch',
-        'odi_bringup',
-        'odi_integration.launch.py',
+        'ros2', 'launch', 'odi_bringup', 'odi_integration.launch.py',
         *sys.argv[1:],
     ]
-    raise SystemExit(subprocess.call(command))
+    raise SystemExit(_run_local_stack(command))
 
 
 def main_stop() -> None:
@@ -172,9 +217,7 @@ def main_status() -> None:
 
 def main_logs() -> None:
     command = [
-        'ssh',
-        '-t',
-        _robot_host(),
+        'ssh', '-t', _robot_host(),
         f'tmux attach-session -t {REMOTE_SESSION}',
     ]
     raise SystemExit(subprocess.call(command))
