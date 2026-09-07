@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<!-- ┌─ 연결 지도 ─────────────────────────────────────────────
+     │ 이 파일을 넘겨주는 곳 : bridge/app.py 의 index()  ( GET / )
+     │
+     │ 불러오는 파일 :
+     │     /css/odi.css       → static/css/odi.css
+     │     /js/schema.js      → static/js/schema.js      (먼저)
+     │     /js/exploring.js   → static/js/exploring.js   (나중)
+     │   순서가 중요하다. exploring.js 가 schema.js 의 함수를 쓴다.
+     │
+     │ ★ 화면이 두 덩어리로 나뉜다
+     │     #screen     IDLE / PREPARING / REFLECTING — JS 가 통째로 그림
+     │     #exploring  탐험 화면 — DOM 을 고정해두고 값만 바꿈
+     │
+     │   탐험 화면만 DOM 을 고정하는 이유는 1 초마다 갱신되기 때문이다.
+     │   innerHTML 을 갈아치우면 <img> 가 매번 다시 로드돼서 깜빡인다.
+     │   나머지 화면은 상태가 바뀔 때만 그리므로 통째로 그려도 된다.
+     │
+     │ ★ 아래 id 들은 exploring.js 의 el 객체와 1:1 로 짝이다.
+     └────────────────────────────────────────────────────────-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/odi.css">
+<link rel="stylesheet" href="/css/idle.css">
+</head>
+<body data-tone="dark">
+
+<div class="wrap">
+
+  <div class="offline" id="offline" hidden>
+    <span id="offlineMsg"></span>
+    <b id="offlineAge"></b>
+  </div>
+
+  <!-- IDLE / PREPARING / REFLECTING — 상태가 바뀔 때만 그린다 -->
+  <div id="screen"></div>
+
+  <!-- 탐험 화면 — DOM 고정, 값만 제자리에서 갱신 -->
+  <div id="exploring" hidden>
+
+    <div class="status">
+      <div class="eyebrow"><span id="phase">탐험 중</span><em id="mode">FRONTIER</em></div>
+      <div class="line">
+        <h2 id="head">준비하고 있어요</h2>
+        <span class="clock mono" id="clock">00:00</span>
+      </div>
+      <div class="gauge">
+        <div class="track"><div class="fill" id="fill"></div></div>
+        <div class="labels">
+          <span>Odi의 의욕</span>
+          <b id="drive">100%</b>
+        </div>
+      </div>
+      <button class="stop-mission" id="stopBtn" type="button">탐험 종료</button>
+    </div>
+
+    <div class="cols">
+      <div>
+        <div class="cam">
+          <div class="photo" id="cam">Odi가 보는 화면</div>
+          <div class="cap"><span>방금 촬영</span><span id="shotAt">—</span></div>
+        </div>
+        <div class="mapbox" id="mapbox"></div>
+      </div>
+
+      <div class="feed">
+        <h3>오늘의 발견</h3>
+        <div class="queue" id="queue" hidden></div>
+        <div id="feed"></div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- schema.js 가 먼저. exploring.js 가 describe() / why() / SAY 를 쓴다. -->
+<script src="/js/schema.js"></script>
+<script src="/js/exploring.js"></script>
+</body>
+</html>
