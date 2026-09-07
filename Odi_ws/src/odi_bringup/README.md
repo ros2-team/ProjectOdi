@@ -1,14 +1,29 @@
 # ODI Bringup
 
-This package starts the complete ODI robot system.
+This package starts the ODI robot platform and application layers.
 
-## Process layout
+## Recommended two-terminal layout
 
-- Raspberry Pi: TurtleBot3 bringup and camera
-- Main PC: Cartographer SLAM, Nav2, and all ODI application nodes
+### Terminal 1: robot platform
 
-The Raspberry Pi processes run in a tmux session named `odi_robot`.
-Stopping `odi_start` with `Ctrl+C` also stops that remote session.
+This command starts TurtleBot3 bringup and camera on the Raspberry Pi, then
+Cartographer and Nav2 on the main PC.
+
+```bash
+ros2 run odi_bringup odi_robot_start
+```
+
+### Terminal 2: ODI application
+
+This command starts mission management, behavior, detection, exploration,
+first encounter, observation, return home, reflection, and world memory.
+
+```bash
+ros2 run odi_bringup odi_project_start
+```
+
+Stop each layer with `Ctrl+C`. Stopping Terminal 1 also stops the Raspberry
+Pi tmux session.
 
 ## One-time setup
 
@@ -44,30 +59,26 @@ colcon build --symlink-install --packages-select odi_bringup
 source install/setup.bash
 ```
 
-## Start everything
-
-Load the project environment variables first when OpenAI or database settings
-are stored in an env file.
+Load the project environment before starting the application layer:
 
 ```bash
 cd ~/ProjectOdi_assembly
 source .env
 source Odi_ws/install/setup.bash
+```
 
+## Full single-terminal mode
+
+The original all-in-one command remains available:
+
+```bash
 ros2 run odi_bringup odi_start
 ```
 
 Extra ROS launch arguments may be appended:
 
 ```bash
-ros2 run odi_bringup odi_start use_detection:=false
-```
-
-To leave the Raspberry Pi bringup and camera running after the local launch
-exits:
-
-```bash
-ros2 run odi_bringup odi_start --keep-robot-running
+ros2 run odi_bringup odi_project_start use_detection:=false
 ```
 
 ## Robot process control
@@ -87,20 +98,10 @@ The default host is `team4@team4.local`. Override it when needed:
 export ODI_ROBOT_HOST=team4@192.168.0.20
 ```
 
-## Main PC only
+## Diagnostic launch
 
-For diagnostics, run SLAM, Nav2, and ODI without starting Raspberry Pi
-processes:
-
-```bash
-ros2 launch odi_bringup odi_system.launch.py
-```
-
-Individual parts can be disabled:
+Run only SLAM and Nav2 without Raspberry Pi process control:
 
 ```bash
-ros2 launch odi_bringup odi_system.launch.py \
-  use_slam:=true \
-  use_nav2:=true \
-  use_application:=false
+ros2 launch odi_bringup odi_system.launch.py use_application:=false
 ```
