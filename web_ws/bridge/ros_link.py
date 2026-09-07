@@ -333,18 +333,10 @@ class OdiBridgeNode(Node):
           이 블록이 없으면 게이지가 100% 에 고정된다.
         """
         prev = state.snapshot()["mission"]
-        state.patch(mission=msg.state)
-
-        if msg.detail:
-            try:
-                import json
-                extra = json.loads(msg.detail)
-                state.patch(
-                    motivation=extra.get("motivation"),
-                    session_id=extra.get("session_id"),
-                )
-            except Exception:
-                pass    # detail 이 JSON 이 아니면 그냥 무시한다
+        state.patch(
+            mission=msg.state,
+            session_id=msg.session_id,
+        )
 
         # EXPLORING 으로 '들어오는 순간' 시계를 새로 켠다.
         # 이미 값이 있어도 덮어쓴다 — 새 탐험이 시작된 것이므로.
@@ -373,8 +365,9 @@ class OdiBridgeNode(Node):
         그 대기열을 화면에 보여준다.
         맨 앞은 지금 처리 중인 것이므로 빼고, 나머지만 큐로 표시한다.
         """
-        names = [o.class_name for o in msg.objects]
-        state.patch(queue=names[1:] if len(names) > 1 else [])
+        # 현재 Behavior Executor는 한 batch에서 가장 큰 물체 하나만
+        # 처리하므로 나머지를 대기열처럼 표시하지 않는다.
+        state.patch(queue=[])
 
     @safe
     def on_map(self, msg):
