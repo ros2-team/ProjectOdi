@@ -12,6 +12,7 @@
 # │ 발표 직전에 바꿀 값은 전부 여기 모여 있다.
 # └────────────────────────────────────────────────────────────
 
+import os
 from pathlib import Path
 
 # 파일 경로 기준 기본 디렉토리 설정
@@ -44,35 +45,36 @@ DISK_SAVE_SEC = 1.0  # 일기 작성에 쓰일 최신 카메라 이미지를 파
 # CuriosityDecision 은 서비스 응답이라서 브리지가 직접 못 받는다.
 # 액션 result 와 서비스 응답은 요청한 노드에게만 가기 때문이다.
 # → 미션 노드가 받아서 토픽으로 재발행해야 한다. (docs/토픽요청.md 참조)
-TOPIC_MISSION = "/odi/mission_state"                # MissionState        화면 라우팅
-TOPIC_BEHAVIOR = "/odi/behavior_state"              # BehaviorState       상단 큰 문구
-TOPIC_DETECTIONS = "/odi/detections"                # DetectedObjectArray 다음 차례 큐
-#TOPIC_ENCOUNTER = "/perception/scene_data_1st"      # EncounterResult     ① 처음 만남
-TOPIC_DECISION = "/odi/curiosity_decision"          # CuriosityDecision   ② 호기심 판단
-#TOPIC_OBSERVATION = "/perception/scene_data_2nd"    # ObservationResult   ③ 관찰 완료
-TOPIC_ENCOUNTER = "/odi/encounter"        # 로봇 팀이 EncounterResult 로 새로 발행
-TOPIC_OBSERVATION = "/odi/observation"    # 로봇 팀이 ObservationResult 로 새로 발행
+TOPIC_MISSION = "/mission/state"
+TOPIC_BEHAVIOR = "/behavior/state"
+TOPIC_DETECTIONS = "/perception/detected_objects"
+TOPIC_ENCOUNTER = "/first_encounter/result"
+TOPIC_DECISION = "/curiosity/decision"
+TOPIC_OBSERVATION = "/observation/result"
 
 TOPIC_MAP = "/map"  # SLAM 지도 데이터
 
 # 웹 → 로봇 명령. std_msgs/String 으로 "START" 를 보낸다.
 # ★ 로봇 팀은 이 토픽만 구독하면 된다. 커스텀 메시지 필요 없음.
-TOPIC_COMMAND = "/odi/command"
+TOPIC_COMMAND = "/mission/command"
 
 # 로봇이 관찰 사진을 저장하는 폴더.
 # 웹은 이 폴더를 /media/obs/파일명 으로 서빙한다.
 # 로봇이 다른 폴더에 저장하면 심볼릭 링크를 걸거나 이 값을 맞춘다.
-PHOTO_DIR = STATIC_DIR / "media" / "obs"
+DATASET_DIR = Path(
+    os.getenv("ODI_DATASET_DIR", str(Path.home() / "ProjectOdi_data"))
+).expanduser()
+PHOTO_DIR = DATASET_DIR / "first_encounter"
 
 # ── 3단계: 데이터베이스 설정 ──────────────────────────────
 # 브리지는 detected_objects 를 읽기만 한다. 쓰는 건 세션 테이블뿐.
 # 호기심 노드와 커넥션을 공유하지 않는다.
 DB = {
-    "host": "192.168.0.20",
-    "port": 3306,
-    "user": "yyj",
-    "password": "1234",
-    "database": "Odi_DB",
+    "host": os.getenv("ODI_DB_HOST", "localhost"),
+    "port": int(os.getenv("ODI_DB_PORT", "3306")),
+    "user": os.getenv("ODI_DB_USER", "odi_user"),
+    "password": os.getenv("ODI_DB_PASSWORD", ""),
+    "database": os.getenv("ODI_DB_NAME", "odi_db"),
 }
 
 # ── 5단계: 지도 관련 설정 ────────────────────────────────
