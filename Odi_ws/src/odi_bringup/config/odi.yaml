@@ -3,16 +3,25 @@ exploration_node:
     map_topic: /map
     robot_frame: base_footprint
     navigation_action_name: /navigate_to_pose
-    minimum_frontier_size: 5
-    visited_goal_radius: 0.6
+    minimum_frontier_size: 3
+    visited_goal_radius: 0.35
+    failed_goal_radius: 0.35
     minimum_goal_distance: 0.5
     maximum_goal_distance: 5.0
+    frontier_goal_offset: 0.3
+    frontier_empty_retry_count: 4
+    frontier_retry_delay_sec: 1.0
+    frontier_information_gain_weight: 1.0
+    frontier_distance_weight: 0.35
     obstacle_clearance: 0.25
     map_wait_timeout_sec: 10.0
     navigation_server_timeout_sec: 5.0
     navigation_timeout_sec: 120.0
     maximum_navigation_failures: 5
-    roam_sampling_step: 8
+    roam_sampling_step: 5
+    roam_minimum_goal_distance: 1.0
+    roam_maximum_goal_distance: 3.0
+    roam_direction_weight: 0.8
 
 return_home_node:
   ros__parameters:
