@@ -163,3 +163,25 @@ def test_candidates_are_sorted_by_score():
 
     assert len(candidates) == 2
     assert candidates[0].score >= candidates[1].score
+
+
+def test_score_balances_information_gain_and_distance():
+    """Large frontiers may outrank nearer ones when gain is worthwhile."""
+    detector = FrontierDetector(
+        minimum_frontier_size=1,
+        information_gain_weight=1.0,
+        distance_weight=0.1,
+    )
+    map_message = create_test_map(width=20, height=12)
+    set_free_rectangle(map_message, 1, 4, 2, 5)
+    set_free_rectangle(map_message, 10, 2, 16, 8)
+
+    candidates = detector.detect(
+        map_message,
+        robot_x=0.0,
+        robot_y=5.0,
+    )
+
+    assert len(candidates) == 2
+    assert candidates[0].size > candidates[1].size
+    assert candidates[0].distance > candidates[1].distance
