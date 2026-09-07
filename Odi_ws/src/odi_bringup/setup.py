@@ -35,6 +35,8 @@ setup(
     entry_points={
         'console_scripts': [
             'odi_start = odi_bringup.system_control:main_start',
+            'odi_robot_start = odi_bringup.system_control:main_robot_start',
+            'odi_project_start = odi_bringup.system_control:main_project_start',
             'odi_stop = odi_bringup.system_control:main_stop',
             'odi_status = odi_bringup.system_control:main_status',
             'odi_logs = odi_bringup.system_control:main_logs',
