@@ -28,6 +28,8 @@ class FrontierDetector:
     def __init__(
             self,
             minimum_frontier_size: int = 5,
+            information_gain_weight: float = 1.0,
+            distance_weight: float = 0.35,
     ) -> None:
 
         if minimum_frontier_size < 1:
@@ -37,6 +39,8 @@ class FrontierDetector:
         self.minimum_frontier_size = (
             minimum_frontier_size
         )
+        self.information_gain_weight = information_gain_weight
+        self.distance_weight = distance_weight
 
     def is_frontier_cell(
             self,
@@ -192,8 +196,15 @@ class FrontierDetector:
                 world_x - robot_x,
                 world_y - robot_y,
             )
+            information_gain = (
+                len(cluster)
+                * map_message.info.resolution
+            )
             score = (
-                len(cluster) / max(distance, 0.1)
+                self.information_gain_weight
+                * information_gain
+                - self.distance_weight
+                * distance
             )
             candidates.append(
                 FrontierCandidate(
