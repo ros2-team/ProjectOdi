@@ -1,5 +1,6 @@
 flask>=3.0
 flask-sock>=0.7
+pymysql>=1.1
 
 # 지도 변환 (OccupancyGrid -> PNG)
 pillow>=9.0
