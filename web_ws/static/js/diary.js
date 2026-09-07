@@ -28,9 +28,8 @@
    ============================================================ */
 
 
-/* location.pathname 은 "/diary/3" 같은 문자열이다.
-   정규식으로 끝의 숫자만 뽑는다. 없으면 null → 목록 화면. */
-const SESSION_ID = (location.pathname.match(/\/diary\/(\d+)/) || [])[1] || null;
+/* 실제 Mission Manager는 UUID 형식의 session_id를 사용한다. */
+const SESSION_ID = (location.pathname.match(/\/diary\/([^/]+)/) || [])[1] || null;
 
 const page = document.getElementById('page');
 
@@ -145,7 +144,7 @@ function render(s, obs){
 
       <div class="cover">
         <div class="d">${s.started_at}</div>
-        <h1>Odi의 ${ordinal(s.id)} 탐험</h1>
+        <h1>Odi의 탐험 일기</h1>
         <div class="stats">
           <span>${s.minutes}분</span>
           <span>발견 ${s.found_count}</span>
