@@ -52,10 +52,10 @@ from flask_sock import Sock
 import config
 from bridge import commands, frames, state
 
-# 일기 데이터 출처.
-# DB 테이블이 생기면 이 한 줄만 바꾼다:
-#     from bridge import db as diary_source
-from bridge import diary_fake as diary_source
+if config.USE_FAKE:
+    from bridge import diary_fake as diary_source
+else:
+    from bridge import db as diary_source
 
 
 def create_app():
@@ -106,6 +106,11 @@ def create_app():
         """
         return send_from_directory(config.STATIC_DIR / "media", filename)
 
+    @app.get("/media/obs/<path:filename>")
+    def observation_media(filename):
+        """Serve images written by the First Encounter node."""
+        return send_from_directory(config.PHOTO_DIR, filename)
+
     # ════════════════════════════════════════════════════════
     # 일기
     #
@@ -115,7 +120,7 @@ def create_app():
     # ════════════════════════════════════════════════════════
 
     @app.get("/diary")
-    @app.get("/diary/<int:session_id>")
+    @app.get("/diary/<session_id>")
     def diary_page(session_id=None):
         """일기 화면. session_id 는 자바스크립트가 주소에서 직접 읽는다."""
         return send_from_directory(config.STATIC_DIR, "diary.html")
@@ -125,7 +130,7 @@ def create_app():
         """지난 일기 목록."""
         return jsonify(diary_source.list_sessions())
 
-    @app.get("/api/sessions/<int:session_id>")
+    @app.get("/api/sessions/<session_id>")
     def api_session(session_id):
         """일기 한 편 + 그날의 관찰 기록.
 
@@ -255,7 +260,7 @@ def create_app():
           bridge/commands.py 에 넣어두면 ros_link 가 꺼내서 발행한다.
         """
         s = state.snapshot()
-        if s["mission"] not in ("IDLE", "COMPLETED"):
+        if s["mission"] != "IDLE":
             # 이미 탐험 중이면 거절한다.
             # 이게 없으면 데모 때 버튼이 두 번 눌려서 세션이 꼬인다.
             # 409 Conflict = "지금 상태에서는 그 요청을 처리할 수 없다"
@@ -267,14 +272,32 @@ def create_app():
         # 로봇에게 출발하라고 알린다.
         # 로봇이 안 떠 있으면 아무도 안 꺼내가고, 화면은 PREPARING 에 머문다.
         # (프론트가 12 초 뒤 "로봇이 아직 응답하지 않아요" 를 띄운다)
-        commands.send("START")
+        if not commands.send("START"):
+            state.patch(mission="IDLE")
+            return jsonify(error="command queue is full"), 503
 
         # 가짜 모드에서는 시나리오를 처음부터 다시 돌린다.
         if config.USE_FAKE:
             from bridge import fake
             fake.restart()
 
-        return jsonify(session_id=1), 201   # 201 Created
+        return jsonify(command="START", accepted=True), 202
+
+    @app.post("/sessions/stop")
+    def stop_session():
+        """Request an orderly stop, return home, and reflection."""
+        if state.snapshot()["mission"] not in ("PREPARING", "EXPLORING"):
+            return jsonify(error="mission is not exploring"), 409
+        if not commands.send("STOP"):
+            return jsonify(error="command queue is full"), 503
+        return jsonify(command="STOP", accepted=True), 202
+
+    @app.post("/sessions/reset")
+    def reset_session():
+        """Reset the Mission Manager and Behavior Executor."""
+        if not commands.send("RESET"):
+            return jsonify(error="command queue is full"), 503
+        return jsonify(command="RESET", accepted=True), 202
 
     @app.post("/sessions/home")
     def go_home():
@@ -295,8 +318,10 @@ def create_app():
           reset() 은 발견 목록까지 지운다. 여기서는 상태만 바꾼다 —
           일기를 다시 열었을 때 그 데이터가 아직 필요하다.
         """
+        if not commands.send("RESET"):
+            return jsonify(error="command queue is full"), 503
         state.go_idle()
-        return jsonify(ok=True)
+        return jsonify(command="RESET", accepted=True), 202
 
     # ════════════════════════════════════════════════════════
     # (2) WebSocket — 상태 푸시
