@@ -10,6 +10,9 @@ from odi_interfaces.msg import BehaviorState
 from odi_interfaces.msg import MissionState
 from odi_interfaces.msg import DetectedObjectArray
 from odi_interfaces.msg import BehaviorEvent
+from odi_interfaces.msg import EncounterResult
+from odi_interfaces.msg import CuriosityDecision
+from odi_interfaces.msg import ObservationResult
 
 from odi_interfaces.srv import EvaluateCuriosity
 
@@ -131,6 +134,24 @@ class BehaviorExecutorNode(Node):
             DetectedObjectArray,
             "/perception/detected_objects",
             self.detected_objects_callback,
+            10,
+        )
+
+        # 웹 브리지가 Action/Service 결과를 실시간으로 볼 수 있도록
+        # Behavior Executor가 받은 결과를 일반 토픽으로 다시 발행한다.
+        self.encounter_result_publisher = self.create_publisher(
+            EncounterResult,
+            "/first_encounter/result",
+            10,
+        )
+        self.curiosity_decision_publisher = self.create_publisher(
+            CuriosityDecision,
+            "/curiosity/decision",
+            10,
+        )
+        self.observation_result_publisher = self.create_publisher(
+            ObservationResult,
+            "/observation/result",
             10,
         )
 
@@ -938,6 +959,7 @@ class BehaviorExecutorNode(Node):
             )
             return
         self.blackboard.encounter_result = encounter_result
+        self.encounter_result_publisher.publish(encounter_result)
 
         if not encounter_result.success:
             self.get_logger().warning(
@@ -1104,6 +1126,9 @@ class BehaviorExecutorNode(Node):
             return
 
         self.blackboard.curiosity_decision = (
+            response.decision
+        )
+        self.curiosity_decision_publisher.publish(
             response.decision
         )
         self.blackboard.current_stage = (
@@ -1317,6 +1342,9 @@ class BehaviorExecutorNode(Node):
             return
 
         self.blackboard.observation_result = observation_result
+        self.observation_result_publisher.publish(
+            observation_result
+        )
 
         if not observation_result.success:
             self.get_logger().warning(
@@ -1981,6 +2009,5 @@ def main(args=None) -> None:
 
 if __name__ == "__main__":
     main()
-
 
 
