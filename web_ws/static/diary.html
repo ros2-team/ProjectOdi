@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odi · 탐험 일기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/odi.css">
+</head>
+
+<!-- data-tone="light" 가 탐험 화면과의 결정적 차이다.
+     밖에 나가 있을 땐 어둡고, 집에 돌아와 일기를 쓰면 종이색.
+     문서의 탐험 → 복귀 → 회고 흐름이 화면 색으로 드러난다. -->
+<body data-tone="light">
+
+<div class="wrap">
+  <!-- 내용은 전부 diary.js 가 채운다.
+       상태(일기 준비 중 / 완성 / 없음)에 따라 아예 다른 화면이 들어가므로
+       뼈대를 미리 짜두지 않는다. -->
+  <div id="page"></div>
+</div>
+
+<!-- schema.js 가 먼저. diary.js 가 describe() / kr() / iga() 를 쓴다. -->
+<script src="/js/schema.js"></script>
+<script src="/js/diary.js"></script>
+</body>
+</html>
