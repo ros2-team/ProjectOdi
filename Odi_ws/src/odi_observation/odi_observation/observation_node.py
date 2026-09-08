@@ -6,8 +6,12 @@ import re
 import time
 import threading
 
+from datetime import datetime
 from pathlib import Path
 from typing import Literal, cast
+
+import cv2
+import numpy as np
 from geometry_msgs.msg import PoseStamped
 from action_msgs.msg import GoalStatus
 from nav2_msgs.action import NavigateToPose
@@ -25,6 +29,8 @@ from rclpy.action import (
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import CompressedImage
 
 from odi_interfaces.action import ObserveObject
 from odi_interfaces.msg import (
@@ -88,6 +94,10 @@ Rules:
         self.locator_lock = threading.Lock()
         self.locator_event = threading.Event()
 
+        self.frame_condition = threading.Condition()
+        self.latest_image_bytes = None
+        self.latest_image_sequence = 0
+
         self.awaiting_locator_result = False
         self.latest_approach_goal = None
 
@@ -112,6 +122,21 @@ Rules:
             'navigation_timeout_sec',
             120.0,
         )
+        self.declare_parameter(
+            'camera_topic',
+            '/camera/image_raw/compressed',
+        )
+        self.declare_parameter(
+            'dataset_dir',
+            os.getenv(
+                'ODI_DATASET_DIR',
+                str(Path.home() / 'ProjectOdi_data'),
+            ),
+        )
+        self.declare_parameter('capture_settle_sec', 0.5)
+        self.declare_parameter('capture_frame_count', 8)
+        self.declare_parameter('capture_timeout_sec', 3.0)
+        self.declare_parameter('capture_jpeg_quality', 95)
 
 
         openai_timeout_sec = (
@@ -142,6 +167,35 @@ Rules:
             )
             .get_parameter_value()
             .double_value
+        )
+        self.camera_topic = str(
+            self.get_parameter('camera_topic').value
+        )
+        self.capture_settle_sec = float(
+            self.get_parameter('capture_settle_sec').value
+        )
+        self.capture_frame_count = max(
+            1,
+            int(self.get_parameter('capture_frame_count').value),
+        )
+        self.capture_timeout_sec = float(
+            self.get_parameter('capture_timeout_sec').value
+        )
+        self.capture_jpeg_quality = min(
+            100,
+            max(
+                1,
+                int(self.get_parameter('capture_jpeg_quality').value),
+            ),
+        )
+
+        dataset_dir = Path(
+            str(self.get_parameter('dataset_dir').value)
+        ).expanduser()
+        self.observation_image_dir = dataset_dir / 'observation'
+        self.observation_image_dir.mkdir(
+            parents=True,
+            exist_ok=True,
         )
 
 
@@ -220,6 +274,13 @@ Rules:
                 callback_group = self.callback_group,
             )
         )
+        self.image_subscription = self.create_subscription(
+            CompressedImage,
+            self.camera_topic,
+            self.image_callback,
+            qos_profile_sensor_data,
+            callback_group=self.callback_group,
+        )
         self.navigation_client = ActionClient(
             self,
             NavigateToPose,
@@ -239,7 +300,160 @@ Rules:
         self.get_logger().info(
             '\n Observation Action Server is running'
             f'\n model = {self.model}'
+            f'\n camera_topic = {self.camera_topic}'
+            f'\n image_dir = {self.observation_image_dir}'
         )
+
+    def image_callback(self, message: CompressedImage) -> None:
+        if not message.data:
+            return
+
+        with self.frame_condition:
+            self.latest_image_bytes = bytes(message.data)
+            self.latest_image_sequence += 1
+            self.frame_condition.notify_all()
+
+    def wait_for_fresh_frame(
+        self,
+        after_sequence: int,
+        timeout_sec: float,
+    ) -> tuple[int, bytes] | None:
+        deadline = time.monotonic() + timeout_sec
+
+        with self.frame_condition:
+            while (
+                rclpy.ok()
+                and self.latest_image_sequence <= after_sequence
+            ):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    return None
+                self.frame_condition.wait(
+                    timeout=min(remaining, 0.1)
+                )
+
+            if self.latest_image_bytes is None:
+                return None
+
+            return (
+                self.latest_image_sequence,
+                self.latest_image_bytes,
+            )
+
+    def capture_observation_image(
+        self,
+        goal_handle,
+        detection_id: str,
+    ) -> str:
+        settle_deadline = (
+            time.monotonic() + self.capture_settle_sec
+        )
+        while time.monotonic() < settle_deadline:
+            if goal_handle.is_cancel_requested:
+                raise ObservationCanceledError(
+                    'Observation canceled before image capture'
+                )
+            time.sleep(0.05)
+
+        with self.frame_condition:
+            last_sequence = self.latest_image_sequence
+
+        candidates = []
+        capture_deadline = (
+            time.monotonic() + self.capture_timeout_sec
+        )
+
+        while (
+            len(candidates) < self.capture_frame_count
+            and time.monotonic() < capture_deadline
+        ):
+            if goal_handle.is_cancel_requested:
+                raise ObservationCanceledError(
+                    'Observation canceled during image capture'
+                )
+
+            remaining = capture_deadline - time.monotonic()
+            frame_result = self.wait_for_fresh_frame(
+                last_sequence,
+                min(max(remaining, 0.0), 0.5),
+            )
+            if frame_result is None:
+                continue
+
+            last_sequence, image_bytes = frame_result
+            encoded = np.frombuffer(
+                image_bytes,
+                dtype=np.uint8,
+            )
+            frame = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+            if frame is None or frame.size == 0:
+                continue
+
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            sharpness = float(
+                cv2.Laplacian(gray, cv2.CV_64F).var()
+            )
+            brightness = float(gray.mean())
+            exposure_weight = (
+                1.0 if 30.0 <= brightness <= 225.0 else 0.25
+            )
+            quality_score = sharpness * exposure_weight
+            candidates.append(
+                (
+                    quality_score,
+                    sharpness,
+                    brightness,
+                    frame,
+                )
+            )
+
+        if not candidates:
+            raise RuntimeError(
+                'No fresh camera frame was available after approach'
+            )
+
+        _, sharpness, brightness, best_frame = max(
+            candidates,
+            key=lambda candidate: candidate[0],
+        )
+
+        success, encoded_image = cv2.imencode(
+            '.jpg',
+            best_frame,
+            [
+                int(cv2.IMWRITE_JPEG_QUALITY),
+                self.capture_jpeg_quality,
+            ],
+        )
+        if not success:
+            raise RuntimeError(
+                'Failed to encode the observation image'
+            )
+
+        safe_detection_id = re.sub(
+            r'[^A-Za-z0-9_.-]+',
+            '_',
+            detection_id,
+        ).strip('_') or 'unknown'
+        timestamp = datetime.now().strftime(
+            '%Y%m%d_%H%M%S_%f'
+        )
+        image_path = self.observation_image_dir / (
+            f'{timestamp}_{safe_detection_id}.jpg'
+        )
+        image_path.write_bytes(encoded_image.tobytes())
+
+        height, width = best_frame.shape[:2]
+        self.get_logger().info(
+            '\n ::Observation image captured::'
+            f'\n path = {image_path}'
+            f'\n size = {width}x{height}'
+            f'\n candidates = {len(candidates)}'
+            f'\n sharpness = {sharpness:.2f}'
+            f'\n brightness = {brightness:.2f}'
+        )
+
+        return str(image_path)
 
     def approach_goal_callback(
             self,
@@ -656,13 +870,30 @@ Rules:
 
             self.publish_feedback(
                 goal_handle,
+                'CAPTURING',
+                0.65,
+                'Capturing a clear image after approach',
+            )
+
+            observation_image_path = (
+                self.capture_observation_image(
+                    goal_handle,
+                    encounter.detection_id,
+                )
+            )
+
+            self.publish_feedback(
+                goal_handle,
                 'ANALYZING',
-                0.70,
+                0.75,
                 'Analyzing the object with OpenAI vision',
             )
 
             analysis_data, raw_json = (
-                self.analyze_image(encounter)
+                self.analyze_image(
+                    encounter,
+                    observation_image_path,
+                )
             )
 
             if goal_handle.is_cancel_requested:
@@ -677,6 +908,7 @@ Rules:
                 started_at,
                 analysis_data,
                 raw_json,
+                observation_image_path,
             )
 
             self.publish_feedback(
@@ -752,16 +984,18 @@ Rules:
             started_at,
             analysis_data: dict,
             raw_json: str,
+            observation_image_path: str,
     ) -> ObservationResult:
 
         observation = ObservationResult()
         observation.detection_id = encounter.detection_id
         observation.success = True
         observation.image_paths = [
-            encounter.image_path
+            encounter.image_path,
+            observation_image_path,
         ]
         observation.representative_image_path = (
-            encounter.image_path
+            observation_image_path
         )
 
         detailed_label = self.build_label(
@@ -910,9 +1144,12 @@ Rules:
     def analyze_image(
             self,
             encounter,
+            observation_image_path: str,
     ) -> tuple[dict,str]:
 
-        image_path = Path(encounter.image_path).expanduser()
+        image_path = Path(
+            observation_image_path
+        ).expanduser()
         if not image_path.is_file():
             raise RuntimeError(
                 f'\n Observation image does not exist : {image_path}'
@@ -1202,7 +1439,6 @@ def main(args=None) -> None:
 
 if __name__ == '__main__':
     main()
-
 
 
 
