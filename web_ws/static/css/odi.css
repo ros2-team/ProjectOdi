@@ -214,7 +214,7 @@ button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--lamp);outl
    순서가 중요하다. 글을 먼저 놓고 사진을 아래 두면
    사진이 '증빙'처럼 보인다. 사진이 먼저여야 이야기의 일부가 된다. */
 .blk{margin-bottom:46px}
-.blk .shot{aspect-ratio:3/2;border-radius:8px;margin-bottom:16px;overflow:hidden;
+.blk .shot{aspect-ratio:4/3;border-radius:8px;margin-bottom:16px;overflow:hidden;
            background:#E7E4DA;display:flex;align-items:center;justify-content:center;
            color:#9C978B;font-size:12px}
 .blk .shot img{width:100%;height:100%;object-fit:cover;display:block}
