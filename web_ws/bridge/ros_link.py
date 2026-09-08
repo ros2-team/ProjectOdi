@@ -152,6 +152,7 @@ class OdiBridgeNode(Node):
         #   detection_id 로 찾으면 순서가 어떻든 제 짝에 붙는다.
         self._markers = {}
         self._exploring_since = None    # EXPLORING 진입 시각 → 경과 시간 계산
+        self._session_id = ''
 
         # 지도
         self._map_msg = None            # 마지막으로 받은 OccupancyGrid
@@ -328,15 +329,18 @@ class OdiBridgeNode(Node):
             REFLECTING → "일기 쓰는 중"
             COMPLETED  → 일기 화면으로 전환
 
-        ★ msg.detail 에 JSON 이 들어오면 의욕과 session_id 를 꺼낸다.
-          MissionState 에 motivation 필드가 없어서 쓰는 방법이다.
-          이 블록이 없으면 게이지가 100% 에 고정된다.
+        새 session_id에서는 경로와 발견 마커를 비운다.
+        SLAM 지도 자체는 유지하며 RESET 완료는 ROS 보고로 확인한다.
         """
         prev = state.snapshot()["mission"]
-        state.patch(
-            mission=msg.state,
-            session_id=msg.session_id,
-        )
+        if not state.apply_mission_report(msg.state, msg.session_id):
+            return
+        if msg.session_id != self._session_id:
+            self._session_id = msg.session_id
+            self._path.clear()
+            self._markers.clear()
+            self._exploring_since = None
+            self._map_last = 0.0
 
         # EXPLORING 으로 '들어오는 순간' 시계를 새로 켠다.
         # 이미 값이 있어도 덮어쓴다 — 새 탐험이 시작된 것이므로.
@@ -438,6 +442,8 @@ class OdiBridgeNode(Node):
         아직 호기심 판단 전이라 decision 은 None.
         화면에는 "저기 뭔가 있어요. 가까이 가볼게요."가 뜬다.
         """
+        if not self._is_current_detection(msg.detection_id):
+            return
         if not msg.success:
             self.get_logger().warn(f"encounter 실패: {msg.failure_reason}")
             return
@@ -479,6 +485,8 @@ class OdiBridgeNode(Node):
         """
         # 이 발견의 지도 마커에 판단 결과를 채운다.
         # OBSERVE 는 주황 큰 점, IGNORE 는 회색 작은 점으로 그려진다.
+        if not self._is_current_detection(msg.detection_id):
+            return
         if msg.detection_id in self._markers:
             x, y, _ = self._markers[msg.detection_id]
             self._markers[msg.detection_id] = (x, y, msg.action)
@@ -516,6 +524,8 @@ class OdiBridgeNode(Node):
         지금 탐험 화면에서는 안 쓰지만, DB 에 저장되면
         일기 화면에서 entries[].text 의 재료가 될 수 있다.
         """
+        if not self._is_current_detection(msg.detection_id):
+            return
         if not msg.success:
             self.get_logger().warn(f"observation 실패: {msg.failure_reason}")
             return
@@ -532,6 +542,16 @@ class OdiBridgeNode(Node):
         snap = state.snapshot()
         done = sum(1 for d in snap["discoveries"] if d.get("observed"))
         state.patch(observed_count=done)
+
+    def _is_current_detection(self, detection_id):
+        """Drop delayed results from an old mission after reset."""
+        snapshot = state.snapshot()
+        if not snapshot['session_id'] or snapshot['mission'] in ('IDLE', 'RESETTING'):
+            return False
+        return (
+            ':' not in detection_id
+            or detection_id.split(':', 1)[0] == snapshot['session_id']
+        )
 
 
 # ════════════════════════════════════════════════════════════

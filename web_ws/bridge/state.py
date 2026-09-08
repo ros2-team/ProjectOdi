@@ -70,6 +70,7 @@
 
 import copy
 import threading
+import time
 
 # threading.Lock() 은 열쇠가 하나뿐인 방이라고 생각하면 된다.
 # with LOCK: 블록에 들어가려면 열쇠를 가져야 하고,
@@ -110,6 +111,7 @@ def blank_state():
         # 이번 탐험 번호. Explore.action 의 goal 필드와 같은 값(string).
         # 탐험이 끝나면 웹이 /diary/{session_id} 로 이동한다.
         "session_id": "",
+        "pending_command": "",
 
         "elapsed_sec": 0,      # 탐험 시작부터 흐른 초
         "motivation": 1.0,     # 의욕 0.0 ~ 1.0. 0 이 되면 복귀
@@ -170,6 +172,9 @@ STATE = blank_state()
 #   빈 문자열로 오거나 mission 보다 늦게 오면 비교가 어긋나 방어가 풀린다.
 #   플래그 하나 + "새 탐험이 시작되면 reset() 이 푼다" 규칙이 더 튼튼하다.
 _dismissed = False
+_mission_received_at = None
+_reset_seen = False
+_command_session_id = ''
 
 
 # ════════════════════════════════════════════════════════════
@@ -213,7 +218,7 @@ def reset():
       그쪽에서는 초기화가 안 된 것처럼 보인다.
       clear() + update() 로 '같은 객체의 내용'을 바꿔야 모두에게 반영된다.
     """
-    global _dismissed
+    global _dismissed, _mission_received_at, _reset_seen, _command_session_id
     with LOCK:
         STATE.clear()
         STATE.update(blank_state())
@@ -222,6 +227,81 @@ def reset():
         # 이게 없으면 두 번째 탐험이 끝나도 COMPLETED 가 막혀서
         # 일기 화면으로 넘어가지 않는다.
         _dismissed = False
+        _mission_received_at = None
+        _reset_seen = False
+        _command_session_id = ''
+
+
+def queue_mission_command(name, send_command, allowed_states=None):
+    """Reserve a command atomically until Mission Manager acknowledges it.
+
+    Return an HTTP status and an error string, or (202, '') on success.
+    send_command only enqueues; it must not call back into state.
+    """
+    global _reset_seen, _command_session_id
+    with LOCK:
+        pending = STATE['pending_command']
+        if pending == name:
+            return 202, ''  # Double clicks must not enqueue another command.
+        if pending and name != 'RESET':
+            return 409, 'another command is still pending'
+        if allowed_states is not None and STATE['mission'] not in allowed_states:
+            return 409, 'command is not available in the current mission state'
+        if name == 'START' and (
+            _mission_received_at is None
+            or time.monotonic() - _mission_received_at > 5.0
+        ):
+            return 503, 'waiting for Mission Manager status'
+        if not send_command(name):
+            return 503, 'command queue is full'
+        _command_session_id = STATE['session_id']
+        _reset_seen = False
+        STATE['pending_command'] = name
+        STATE['mission'] = {
+            'START': 'PREPARING', 'STOP': 'RETURNING', 'RESET': 'RESETTING',
+        }[name]
+        return 202, ''
+
+
+def apply_mission_report(mission, session_id):
+    """Accept ROS state without letting pre-command heartbeats unlock START.
+
+    RESET is complete only after RESETTING followed by IDLE with no session.
+    Return whether the report was applied, so the bridge can clear its buffers.
+    """
+    global _mission_received_at, _reset_seen, _dismissed
+    with LOCK:
+        _mission_received_at = time.monotonic()
+        pending = STATE['pending_command']
+        if pending == 'RESET':
+            if mission == 'RESETTING':
+                _reset_seen = True
+            elif mission == 'IDLE' and not session_id and _reset_seen:
+                STATE['pending_command'] = ''
+            else:
+                return False
+        elif pending == 'START':
+            if mission == 'IDLE' or (
+                session_id == _command_session_id and mission != 'RESETTING'
+            ):
+                return False
+            STATE['pending_command'] = ''
+        elif pending == 'STOP':
+            if mission in ('PREPARING', 'EXPLORING'):
+                return False
+            STATE['pending_command'] = ''
+
+        if session_id != STATE['session_id']:
+            sensors = {key: STATE[key] for key in ('camera', 'battery', 'env')}
+            pending = STATE['pending_command']
+            STATE.clear()
+            STATE.update(blank_state())
+            STATE.update(sensors)
+            STATE['pending_command'] = pending
+            _dismissed = False
+        STATE['mission'] = mission
+        STATE['session_id'] = session_id
+        return True
 
 
 def patch(**fields):

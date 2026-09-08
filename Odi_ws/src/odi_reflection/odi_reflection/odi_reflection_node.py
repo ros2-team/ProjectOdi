@@ -158,13 +158,6 @@ class ReflectionNode(Node):
                 f'{get_response.message}',
             )
 
-        if not get_response.observations:
-            return self.finish_failed_goal(
-                goal_handle,
-                f'No observations found for session '
-                f'{session_id}.',
-            )
-
         if goal_handle.is_cancel_requested:
             return self.finish_canceled_goal(goal_handle)
 
@@ -175,15 +168,26 @@ class ReflectionNode(Node):
             message='Generating exploration diary.',
         )
 
-        try:
-            diary_text = self.generate_diary_with_openai(
-                get_response.observations
+        diary_model_name = self.openai_model
+        if not get_response.observations:
+            diary_text = (
+                '이번 탐험에서는 자세히 관찰해 남긴 물체 기록이 없었어. '
+                '다음 탐험을 기다려 볼게.'
             )
-        except Exception as error:
-            return self.finish_failed_goal(
-                goal_handle,
-                f"OpenAI diary generation failed : {error}"
+            diary_model_name = 'template:no_observations'
+            self.get_logger().info(
+                'No observations in this mission; saving an empty-observation diary'
             )
+        else:
+            try:
+                diary_text = self.generate_diary_with_openai(
+                    get_response.observations
+                )
+            except Exception as error:
+                return self.finish_failed_goal(
+                    goal_handle,
+                    f"OpenAI diary generation failed : {error}"
+                )
 
         if goal_handle.is_cancel_requested:
             return self.finish_canceled_goal(goal_handle)
@@ -206,7 +210,7 @@ class ReflectionNode(Node):
         save_request = SaveDiary.Request()
         save_request.session_id = session_id
         save_request.diary_text = diary_text
-        save_request.model_name = self.openai_model
+        save_request.model_name = diary_model_name
 
         try:
             save_response = await (

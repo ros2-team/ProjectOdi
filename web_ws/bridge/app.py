@@ -265,6 +265,14 @@ def create_app():
           ROS 없는 컴퓨터에서 웹 서버가 아예 안 뜬다.
           bridge/commands.py 에 넣어두면 ros_link 가 꺼내서 발행한다.
         """
+        if not config.USE_FAKE:
+            status, error = state.queue_mission_command(
+                'START', commands.send, allowed_states={'IDLE'},
+            )
+            if error:
+                return jsonify(error=error), status
+            return jsonify(command='START', accepted=True), status
+
         s = state.snapshot()
         if s["mission"] != "IDLE":
             # 이미 탐험 중이면 거절한다.
@@ -292,6 +300,13 @@ def create_app():
     @app.post("/sessions/stop")
     def stop_session():
         """Request an orderly stop, return home, and reflection."""
+        if not config.USE_FAKE:
+            status, error = state.queue_mission_command(
+                'STOP', commands.send, allowed_states={'PREPARING', 'EXPLORING'},
+            )
+            if error:
+                return jsonify(error=error), status
+            return jsonify(command='STOP', accepted=True), status
         if state.snapshot()["mission"] not in ("PREPARING", "EXPLORING"):
             return jsonify(error="mission is not exploring"), 409
         if not commands.send("STOP"):
@@ -301,33 +316,32 @@ def create_app():
     @app.post("/sessions/reset")
     def reset_session():
         """Reset the Mission Manager and Behavior Executor."""
-        if not commands.send("RESET"):
-            return jsonify(error="command queue is full"), 503
-        return jsonify(command="RESET", accepted=True), 202
+        if config.USE_FAKE:
+            state.reset()
+            return jsonify(command='RESET', accepted=True), 202
+        status, error = state.queue_mission_command('RESET', commands.send)
+        if error:
+            return jsonify(error=error), status
+        return jsonify(command='RESET', accepted=True), status
 
     @app.post("/sessions/home")
     def go_home():
-        """일기의 [홈으로] 버튼. 화면을 대기 상태로 되돌린다.
+        """Return to the dashboard, resetting only a finished mission.
 
-        ★ 왜 이 라우트가 필요한가
-          탐험이 끝나면 상태가 COMPLETED 로 남는다.
-          그대로 / 를 열면 "오늘 탐험은 끝났어요" 화면이 뜨거나
-          일기로 다시 튕겨서, 관제 화면에 갈 방법이 없다.
-
-        ★ 왜 state.patch(mission="IDLE") 로 끝내지 않는가
-          로봇이 COMPLETED 를 1Hz 로 계속 보고하고 있으면
-          1 초 뒤에 그대로 덮어써진다. 그래서 state.go_idle() 이
-          '이 세션의 완료 보고는 확인했다'를 함께 기록한다.
-          새 탐험이 시작돼 session_id 가 바뀌면 자동으로 풀린다.
-
-        ★ 왜 reset() 이 아닌가
-          reset() 은 발견 목록까지 지운다. 여기서는 상태만 바꾼다 —
-          일기를 다시 열었을 때 그 데이터가 아직 필요하다.
+        Browsing an older diary must not cancel a currently running mission.
+        PREPARING cancellation uses the explicit /sessions/reset route.
         """
-        if not commands.send("RESET"):
-            return jsonify(error="command queue is full"), 503
-        state.go_idle()
-        return jsonify(command="RESET", accepted=True), 202
+        if config.USE_FAKE:
+            state.go_idle()
+            return jsonify(accepted=True), 202
+        if state.snapshot()['mission'] not in ('COMPLETED', 'ERROR'):
+            return jsonify(accepted=True, command=None), 200
+        status, error = state.queue_mission_command(
+            'RESET', commands.send, allowed_states={'COMPLETED', 'ERROR'},
+        )
+        if error:
+            return jsonify(error=error), status
+        return jsonify(command='RESET', accepted=True), status
 
     # ════════════════════════════════════════════════════════
     # (2) WebSocket — 상태 푸시

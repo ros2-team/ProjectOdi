@@ -51,6 +51,7 @@ class OdiBlackboard:
     exploration_started_at: float | None = None
 
     detection_locked: bool = False
+    handled_detection_ids: set[str] = field(default_factory=set)
 
     pending_objects: list[DetectedObject] = field(
         default_factory = list
@@ -88,6 +89,7 @@ class OdiBlackboard:
         self.exploration_started_at = None
 
         self.detection_locked = False
+        self.handled_detection_ids.clear()
         self.pending_objects.clear()
 
         self.current_object = None

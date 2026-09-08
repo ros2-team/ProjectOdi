@@ -196,12 +196,25 @@ function paint(){
     if(lastScreen !== mission){
       lastScreen = mission;
 
-      if(mission === 'IDLE')             renderIdle();
+      if(mission === 'IDLE'){
+        sending = false;
+        redirected = false;
+        renderIdle();
+      }
       else if(mission === 'PREPARING'){  renderInterlude('나갈 준비를 하고 있어요',
                                                          '센서와 지도를 확인하고 있어요.');
                                          preparingSince = Date.now(); }
       else if(mission === 'REFLECTING')  renderInterlude('오늘 있었던 일을 정리하는 중',
                                                          '사진을 고르고 있어요. 잠시만요.');
+      else if(mission === 'RESETTING')  renderInterlude('다음 탐험을 준비하고 있어요',
+                                                         '진행 중인 행동을 마무리하고 있어요. 잠시만 기다려 주세요.');
+      else if(mission === 'ERROR'){
+        renderInterlude('탐험을 마무리하지 못했어요',
+                        '대기 상태로 돌아간 뒤 다시 시작할 수 있어요.');
+        const hint = document.getElementById('hint');
+        hint.innerHTML = '<button class="link" id="resetBtn">대기 화면으로</button>';
+        document.getElementById('resetBtn').addEventListener('click', resetMission);
+      }
       else                               renderInterlude('기다리는 중', mission);
     }
 
@@ -398,6 +411,11 @@ async function startMission(){
       if(btn){ btn.disabled = false; btn.textContent = '이미 탐험 중이에요'; }
       return;
     }
+    if(!res.ok){
+      sending = false;
+      if(btn){ btn.disabled = false; btn.textContent = '로봇 연결을 확인한 뒤 다시 시도해 주세요'; }
+      return;
+    }
   }catch(e){
     sending = false;
     if(btn){ btn.disabled = false; btn.textContent = '연결에 실패했어요'; }
@@ -462,7 +480,19 @@ function paintPreparing(){
   hint.dataset.on = '1';
   hint.innerHTML = `로봇이 아직 응답하지 않아요.
     <button class="link" id="cancelBtn">대기 화면으로</button>`;
-  document.getElementById('cancelBtn').addEventListener('click', goHome);
+  document.getElementById('cancelBtn').addEventListener('click', resetMission);
+}
+
+async function resetMission(){
+  try{
+    const res = await fetch('/sessions/reset', {method: 'POST'});
+    if(!res.ok) throw new Error(res.status);
+    S.mission = 'RESETTING';
+    paint();
+  }catch(e){
+    const hint = document.getElementById('hint');
+    if(hint) hint.textContent = '초기화 요청을 보내지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.';
+  }
 }
 
 

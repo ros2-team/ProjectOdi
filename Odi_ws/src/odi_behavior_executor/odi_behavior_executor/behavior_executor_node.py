@@ -99,6 +99,7 @@ class BehaviorExecutorNode(Node):
             "/evaluate_curiosity",
         )
         self.curiosity_request_active = False
+        self.curiosity_future = None
         self.curiosity_response_ignore = False
 
         #관찰 액션 클라이언트
@@ -241,11 +242,14 @@ class BehaviorExecutorNode(Node):
             detected_object
             for detected_object in msg.objects
             if detected_object.confidence >= 0.5
+            and detected_object.detection_id not in self.blackboard.handled_detection_ids
+            and (
+                ':' not in detected_object.detection_id
+                or detected_object.detection_id.split(':', 1)[0]
+                == self.blackboard.session_id
+            )
         ]
         if not valid_objects:
-            self.get_logger().info(
-                "No valid detected objects"
-            )
             return
 
         selected_object = max(
@@ -258,6 +262,10 @@ class BehaviorExecutorNode(Node):
 
         self.blackboard.detection_locked = True
         self.blackboard.exploration_paused = True
+        # Preserve one selected object per batch when YOLO retries delivery.
+        self.blackboard.handled_detection_ids.update(
+            obj.detection_id for obj in valid_objects
+        )
 
         self.cancel_exploration()
 
@@ -1073,16 +1081,33 @@ class BehaviorExecutorNode(Node):
         )
 
         future = self.curiosity_client.call_async(request)
+        self.curiosity_future = future
+        session_id = self.blackboard.session_id
+        detection_id = encounter_result.detection_id
         future.add_done_callback(
-            self.curiosity_response_callback
+            lambda done: self.curiosity_response_callback(
+                done, session_id, detection_id,
+            )
         )
 
     def curiosity_response_callback(
         self,
         future,
+        session_id: str,
+        detection_id: str,
     ) -> None:
-
+        if future is not self.curiosity_future:
+            return
+        self.curiosity_future = None
         self.curiosity_request_active = False
+        current_object = self.blackboard.current_object
+        if (
+            self.blackboard.mission_state != 'EXPLORING'
+            or self.blackboard.session_id != session_id
+            or current_object is None
+            or current_object.detection_id != detection_id
+        ):
+            return
 
         try:
             response = future.result()
@@ -1890,6 +1915,13 @@ class BehaviorExecutorNode(Node):
         self.blackboard.detection_locked = True
         self.blackboard.exploration_paused = True
         self.blackboard.pending_objects.clear()
+        # Services have no server-side action cancellation. Detach the old
+        # response so it cannot change the next mission's object or flags.
+        old_future = self.curiosity_future
+        self.curiosity_future = None
+        self.curiosity_request_active = False
+        if old_future is not None:
+            old_future.cancel()
 
         if self.exploration_goal_active:
             self.cancel_exploration()

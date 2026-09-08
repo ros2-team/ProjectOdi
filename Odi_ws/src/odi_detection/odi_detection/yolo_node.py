@@ -1,4 +1,6 @@
-"""YOLO detector publishing tracker updates and Behavior detection batches."""
+"""YOLO detector publishing updates and mission-scoped detection batches."""
+
+import time
 
 import cv2
 import rclpy
@@ -7,11 +9,11 @@ from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
 from ultralytics import YOLO
 
-from odi_interfaces.msg import DetectedObject, DetectedObjectArray
+from odi_interfaces.msg import DetectedObject, DetectedObjectArray, MissionState
 
 
 class YoloNode(Node):
-    """Publish object updates and one batch per detection episode."""
+    """Publish object updates and retry detection batches during exploration."""
 
     def __init__(self) -> None:
         super().__init__('yolo_node')
@@ -21,6 +23,7 @@ class YoloNode(Node):
         self.declare_parameter('process_every_n_frames', 3)
         self.declare_parameter('lost_frame_threshold', 30)
         self.declare_parameter('device', 'cpu')
+        self.declare_parameter('batch_publish_interval_sec', 1.0)
 
         self.confidence = self.get_parameter('confidence').value
         self.process_every_n_frames = max(
@@ -31,6 +34,9 @@ class YoloNode(Node):
             'lost_frame_threshold'
         ).value
         self.device = self.get_parameter('device').value
+        self.batch_publish_interval_sec = max(
+            0.1, float(self.get_parameter('batch_publish_interval_sec').value)
+        )
 
         self.bridge = CvBridge()
         self.model = YOLO(self.get_parameter('model_path').value)
@@ -67,10 +73,26 @@ class YoloNode(Node):
         self.detection_episode = 0
         self.episode_active = False
         self.lost_frame_count = 0
+        self.current_session_id = ''
+        self.mission_state = 'IDLE'
+        self.last_batch_sent_at = None
+        self.mission_subscription = self.create_subscription(
+            MissionState, '/mission/state', self.mission_callback, 10,
+        )
 
         self.get_logger().info(
             'YOLO detection pipeline is running'
         )
+
+    def mission_callback(self, message: MissionState) -> None:
+        """Rearm detection for each new mission, including visible targets."""
+        if message.session_id != self.current_session_id:
+            self.current_session_id = message.session_id
+            self.detection_episode = 0
+            self.episode_active = False
+            self.lost_frame_count = 0
+            self.last_batch_sent_at = None
+        self.mission_state = message.state
 
     def image_callback(self, message: CompressedImage) -> None:
         """Run inference and publish individual and batched detections."""
@@ -100,6 +122,7 @@ class YoloNode(Node):
             detection = DetectedObject()
             class_id = int(box.cls[0])
             detection.detection_id = (
+                f'{self.current_session_id}:'
                 f'{self.detection_episode}_{index}_{class_id}'
             )
             detection.class_name = self.model.names[class_id]
@@ -130,12 +153,23 @@ class YoloNode(Node):
         annotated_message.header = message.header
         self.image_publisher.publish(annotated_message)
 
+        # Keep the camera preview running while idle, without consuming the
+        # first detection event before Behavior is ready to explore.
+        if self.mission_state != 'EXPLORING' or not self.current_session_id:
+            return
+
         if detections:
             self.lost_frame_count = 0
-            if not self.episode_active:
+            now = time.monotonic()
+            if (
+                self.last_batch_sent_at is None
+                or now - self.last_batch_sent_at >= self.batch_publish_interval_sec
+            ):
                 self._publish_detection_batch(message, detections)
-                self._publish_best_crop(frame, message, crop_candidates)
+                if not self.episode_active:
+                    self._publish_best_crop(frame, message, crop_candidates)
                 self.episode_active = True
+                self.last_batch_sent_at = now
             return
 
         self.lost_frame_count += 1
@@ -145,6 +179,7 @@ class YoloNode(Node):
         ):
             self.episode_active = False
             self.detection_episode += 1
+            self.last_batch_sent_at = None
             self.get_logger().info(
                 'Detection episode reset after target loss'
             )
@@ -154,14 +189,13 @@ class YoloNode(Node):
         image_message: CompressedImage,
         detections: list[DetectedObject],
     ) -> None:
-        """Publish all objects from the first frame of an episode."""
+        """Publish current objects, retaining IDs when retrying an episode."""
         batch = DetectedObjectArray()
         batch.header = image_message.header
         batch.objects = detections
         self.batch_publisher.publish(batch)
-        self.get_logger().info(
-            f'Published detection batch: {len(detections)} object(s)'
-        )
+        log = self.get_logger().debug if self.episode_active else self.get_logger().info
+        log(f'Published detection batch: {len(detections)} object(s)')
 
     def _publish_best_crop(
         self,

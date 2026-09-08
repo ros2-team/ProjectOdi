@@ -42,4 +42,5 @@ yolo_node:
     confidence: 0.5
     process_every_n_frames: 3
     lost_frame_threshold: 30
+    batch_publish_interval_sec: 1.0
     device: cpu
