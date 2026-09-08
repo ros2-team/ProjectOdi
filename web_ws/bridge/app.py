@@ -48,6 +48,7 @@ import time
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_sock import Sock
+from werkzeug.exceptions import NotFound
 
 import config
 from bridge import commands, frames, state
@@ -108,8 +109,13 @@ def create_app():
 
     @app.get("/media/obs/<path:filename>")
     def observation_media(filename):
-        """Serve images written by the First Encounter node."""
-        return send_from_directory(config.PHOTO_DIR, filename)
+        """Serve images written during encounter or close observation."""
+        for photo_dir in config.PHOTO_DIRS:
+            try:
+                return send_from_directory(photo_dir, filename)
+            except NotFound:
+                continue
+        raise NotFound()
 
     # ════════════════════════════════════════════════════════
     # 일기
