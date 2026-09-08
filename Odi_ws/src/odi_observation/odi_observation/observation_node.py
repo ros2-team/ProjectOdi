@@ -875,12 +875,22 @@ Rules:
                 'Capturing a clear image after approach',
             )
 
-            observation_image_path = (
-                self.capture_observation_image(
-                    goal_handle,
-                    encounter.detection_id,
+            try:
+                observation_image_path = (
+                    self.capture_observation_image(
+                        goal_handle,
+                        encounter.detection_id,
+                    )
                 )
-            )
+            except ObservationCanceledError:
+                raise
+            except RuntimeError as error:
+                observation_image_path = encounter.image_path
+                self.get_logger().warning(
+                    '\n ::Observation image fallback::'
+                    f'\n reason = {error}'
+                    '\n using First Encounter image'
+                )
 
             self.publish_feedback(
                 goal_handle,
@@ -990,10 +1000,11 @@ Rules:
         observation = ObservationResult()
         observation.detection_id = encounter.detection_id
         observation.success = True
-        observation.image_paths = [
-            encounter.image_path,
-            observation_image_path,
-        ]
+        observation.image_paths = [encounter.image_path]
+        if observation_image_path != encounter.image_path:
+            observation.image_paths.append(
+                observation_image_path
+            )
         observation.representative_image_path = (
             observation_image_path
         )
@@ -1439,7 +1450,6 @@ def main(args=None) -> None:
 
 if __name__ == '__main__':
     main()
-
 
 
 
