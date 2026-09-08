@@ -66,7 +66,12 @@ DATASET_DIR = Path(
         os.getenv("ODI_DATASET_DIR", "~/ProjectOdi_data")
     )
 )
-PHOTO_DIR = DATASET_DIR / "first_encounter"
+ENCOUNTER_PHOTO_DIR = DATASET_DIR / "first_encounter"
+OBSERVATION_PHOTO_DIR = DATASET_DIR / "observation"
+PHOTO_DIRS = (
+    OBSERVATION_PHOTO_DIR,
+    ENCOUNTER_PHOTO_DIR,
+)
 
 # ── 3단계: 데이터베이스 설정 ──────────────────────────────
 # 웹은 미션, 관찰, 일기 데이터를 읽기만 한다.
