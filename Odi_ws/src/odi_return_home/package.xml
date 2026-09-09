@@ -11,6 +11,7 @@
   <depend>action_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>nav2_msgs</depend>
+  <depend>nav_msgs</depend>
   <depend>tf2_ros</depend>
   <depend>odi_interfaces</depend>
 

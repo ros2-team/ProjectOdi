@@ -359,7 +359,10 @@ class OdiBridgeNode(Node):
         msg.detail / msg.status 는 지금 쓰지 않는다.
         (필요해지면 상단 작은 글씨로 붙일 수 있다)
         """
+        mode = getattr(msg, 'exploration_mode', '')
         state.patch(behavior=msg.behavior)
+        if mode in ('FRONTIER', 'ROAM'):
+            state.patch(explore_mode=mode)
 
     @safe
     def on_detections(self, msg):

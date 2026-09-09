@@ -35,6 +35,8 @@ return_home_node:
     home_wait_timeout_sec: 10.0
     navigation_server_timeout_sec: 5.0
     navigation_timeout_sec: 180.0
+    home_arrival_radius: 0.3
+    home_arrival_hold_sec: 0.8
 
 yolo_node:
   ros__parameters:
@@ -43,4 +45,10 @@ yolo_node:
     process_every_n_frames: 3
     lost_frame_threshold: 30
     batch_publish_interval_sec: 1.0
+    minimum_box_area_ratio: 0.025
+    minimum_detection_frames: 3
+    reobserve_cooldown_sec: 60.0
+    excluded_classes: ['tv', 'laptop']
+    maximum_observation_distance: 2.0
+    camera_info_topic: /camera/camera_info
     device: cpu

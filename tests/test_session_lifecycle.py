@@ -21,6 +21,8 @@ from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / 'Odi_ws/src'
+sys.path.insert(0, str(SRC / 'odi_detection'))
+from odi_detection.candidate_policy import CandidatePolicy, projected_range
 sys.path.insert(0, str(ROOT / 'web_ws'))
 from bridge import commands, state
 
@@ -52,7 +54,8 @@ behavior_module = load_classes(
     ObjectProcessStage=blackboard_module.ObjectProcessStage)
 detector_module = load_classes(
     SRC / 'odi_detection/odi_detection/yolo_node.py',
-    DetectedObject=NS, DetectedObjectArray=NS, cv2=Mock())
+    DetectedObject=NS, DetectedObjectArray=NS, cv2=Mock(), math=__import__('math'),
+    CandidatePolicy=CandidatePolicy, projected_range=projected_range)
 reflection_module = load_classes(
     SRC / 'odi_reflection/odi_reflection/odi_reflection_node.py',
     Reflect=NS(Result=NS, Feedback=NS),
@@ -166,6 +169,13 @@ class DetectorTests(unittest.TestCase):
         self.node.model = Mock(return_value=[self.result])
         self.node.model.names = {0: 'backpack'}
         self.node.bridge = Mock()
+        self.node.bridge.compressed_imgmsg_to_cv2.return_value = NS(shape=(240, 320, 3))
+        self.node.policy = CandidatePolicy(min_hits=1)
+        self.node.odom_pose = None
+        self.node.odom_received = 0.0
+        self.node.scan_points_in_camera = Mock(return_value=[])
+        self.node.maximum_observation_distance = 2.0
+        self.node.range_notice_at = -100.0
         for name in ('image_publisher', 'detection_publisher', 'batch_publisher'):
             setattr(self.node, name, Mock())
         self.node._publish_best_crop = Mock()
@@ -219,6 +229,17 @@ class DetectorTests(unittest.TestCase):
         calls = self.node.batch_publisher.publish.call_args_list
         self.assertNotEqual(calls[0].args[0].objects[0].detection_id,
                             calls[-1].args[0].objects[0].detection_id)
+
+    def test_far_projected_target_keeps_preview_but_sends_no_candidate(self):
+        self.mission('EXPLORING')
+        self.node.camera_info = NS(k=[100, 0, 60, 0, 100, 100, 0, 0, 1])
+        self.node.scan_points_in_camera.return_value = [(0, 0, 3, 3.0)]*3
+        self.frame(1)
+        self.node.batch_publisher.publish.assert_not_called()
+        self.node.image_publisher.publish.assert_called_once()
+        self.node.scan_points_in_camera.return_value = [(0, 0, 1, 1.0)]*3
+        self.frame(2)
+        self.node.batch_publisher.publish.assert_called_once()
 
 
 class BehaviorTests(unittest.TestCase):

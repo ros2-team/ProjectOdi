@@ -1,15 +1,22 @@
 """YOLO detector publishing updates and mission-scoped detection batches."""
 
 import time
+import math
 
 import cv2
 import rclpy
 from cv_bridge import CvBridge
 from rclpy.node import Node
-from sensor_msgs.msg import CompressedImage
+from sensor_msgs.msg import CompressedImage, CameraInfo, LaserScan
+from nav_msgs.msg import Odometry
+from rclpy.qos import qos_profile_sensor_data
+from rclpy.time import Time
+from rclpy.duration import Duration
+from tf2_ros import Buffer, TransformListener
 from ultralytics import YOLO
 
-from odi_interfaces.msg import DetectedObject, DetectedObjectArray, MissionState
+from odi_interfaces.msg import DetectedObject, DetectedObjectArray, MissionState, EncounterResult
+from odi_detection.candidate_policy import CandidatePolicy, projected_range
 
 
 class YoloNode(Node):
@@ -24,6 +31,35 @@ class YoloNode(Node):
         self.declare_parameter('lost_frame_threshold', 30)
         self.declare_parameter('device', 'cpu')
         self.declare_parameter('batch_publish_interval_sec', 1.0)
+        self.declare_parameter('minimum_box_area_ratio', 0.025)
+        self.declare_parameter('minimum_detection_frames', 3)
+        self.declare_parameter('reobserve_cooldown_sec', 60.0)
+        self.declare_parameter('excluded_classes', ['tv', 'laptop'])
+        self.declare_parameter('maximum_observation_distance', 2.0)
+        self.declare_parameter('camera_info_topic', '/camera/camera_info')
+        self.policy = CandidatePolicy(
+            min_area=float(self.get_parameter('minimum_box_area_ratio').value),
+            min_hits=max(1, int(self.get_parameter('minimum_detection_frames').value)),
+            cooldown=float(self.get_parameter('reobserve_cooldown_sec').value),
+            excluded=self.get_parameter('excluded_classes').value,
+        )
+        self.maximum_observation_distance = float(
+            self.get_parameter('maximum_observation_distance').value)
+        self.camera_info = None
+        self.scan = None
+        self.scan_received = 0.0
+        self.odom_pose = None
+        self.odom_received = 0.0
+        self.range_notice_at = -math.inf
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.create_subscription(CameraInfo,
+            self.get_parameter('camera_info_topic').value,
+            self.camera_info_callback, qos_profile_sensor_data)
+        self.create_subscription(LaserScan, '/scan', self.scan_callback, qos_profile_sensor_data)
+        self.create_subscription(Odometry, '/odom', self.odom_callback, qos_profile_sensor_data)
+        self.create_subscription(EncounterResult, '/first_encounter/result',
+                                 self.encounter_callback, 10)
 
         self.confidence = self.get_parameter('confidence').value
         self.process_every_n_frames = max(
@@ -92,7 +128,56 @@ class YoloNode(Node):
             self.episode_active = False
             self.lost_frame_count = 0
             self.last_batch_sent_at = None
+            self.policy.reset(message.session_id)
         self.mission_state = message.state
+
+    def camera_info_callback(self, message):
+        self.camera_info = message
+
+    def scan_callback(self, message):
+        self.scan = message
+        self.scan_received = time.monotonic()
+
+    def odom_callback(self, message):
+        position = message.pose.pose.position
+        self.odom_pose = (position.x, position.y)
+        self.odom_received = time.monotonic()
+
+    def encounter_callback(self, message):
+        # Suppress both successful and failed attempts to avoid retry loops.
+        if message.detection_id.startswith(self.current_session_id + ':'):
+            self.policy.handled(message.detection_id, time.monotonic())
+
+    def scan_points_in_camera(self, image_message, width, height):
+        info, scan = self.camera_info, self.scan
+        if info is None or scan is None or self.maximum_observation_distance <= 0:
+            return []
+        if (info.width != width or info.height != height or any(abs(d) > 1e-6 for d in info.d)
+                or time.monotonic()-self.scan_received > 0.5):
+            return []
+        def seconds(stamp):
+            return stamp.sec + stamp.nanosec*1e-9
+        if abs(seconds(scan.header.stamp)-seconds(image_message.header.stamp)) > 0.25:
+            return []
+        try:
+            tf = self.tf_buffer.lookup_transform(
+                info.header.frame_id, scan.header.frame_id,
+                Time.from_msg(scan.header.stamp), timeout=Duration(seconds=0.03)).transform
+        except Exception:
+            return []
+        q, t = tf.rotation, tf.translation
+        points = []
+        for index, distance in enumerate(scan.ranges):
+            if not math.isfinite(distance) or not scan.range_min <= distance <= scan.range_max:
+                continue
+            angle = scan.angle_min + index*scan.angle_increment
+            x, y = distance*math.cos(angle), distance*math.sin(angle)
+            # Quaternion rotation of (x, y, 0), then camera translation.
+            ux, uy, uz = -2*q.z*y, 2*q.z*x, 2*(q.x*y-q.y*x)
+            points.append((x+q.w*ux+q.y*uz-q.z*uy+t.x,
+                           y+q.w*uy+q.z*ux-q.x*uz+t.y,
+                           q.w*uz+q.x*uy-q.y*ux+t.z, distance))
+        return points
 
     def image_callback(self, message: CompressedImage) -> None:
         """Run inference and publish individual and batched detections."""
@@ -115,16 +200,22 @@ class YoloNode(Node):
         detections = []
         crop_candidates = []
 
+        now = time.monotonic()
+        height, width = frame.shape[:2]
+        boxes = [tuple(map(int, box.xyxy[0].cpu().numpy().astype(int))) for box in result.boxes]
+        names = [self.model.names[int(box.cls[0])] for box in result.boxes]
+        pose = self.odom_pose if now-self.odom_received <= 1.0 else None
+        associated = self.policy.update(list(zip(boxes, names)), width, height, now, pose)
+        associations = {(box, name): (key, eligible) for box, name, key, eligible in associated}
+        scan_points = self.scan_points_in_camera(message, width, height)
+
         for index, box in enumerate(result.boxes):
             coordinates = box.xyxy[0].cpu().numpy().astype(int)
             x1, y1, x2, y2 = map(int, coordinates)
 
             detection = DetectedObject()
             class_id = int(box.cls[0])
-            detection.detection_id = (
-                f'{self.current_session_id}:'
-                f'{self.detection_episode}_{index}_{class_id}'
-            )
+            detection.detection_id, eligible = associations[(boxes[index], names[index])]
             detection.class_name = self.model.names[class_id]
             detection.confidence = float(box.conf[0])
             detection.center_x = int((x1 + x2) / 2)
@@ -132,10 +223,12 @@ class YoloNode(Node):
             detection.width = x2 - x1
             detection.height = y2 - y1
 
-            detections.append(detection)
-            crop_candidates.append(
-                (detection.confidence, x1, y1, x2, y2)
-            )
+            distance = projected_range(scan_points, boxes[index], self.camera_info.k) if scan_points else None
+            if distance is not None and distance > self.maximum_observation_distance:
+                eligible = False
+            if eligible:
+                detections.append(detection)
+                crop_candidates.append((detection.confidence, x1, y1, x2, y2))
             self.detection_publisher.publish(detection)
 
             cv2.circle(
@@ -157,6 +250,11 @@ class YoloNode(Node):
         # first detection event before Behavior is ready to explore.
         if self.mission_state != 'EXPLORING' or not self.current_session_id:
             return
+
+        if self.maximum_observation_distance > 0 and not scan_points and now-self.range_notice_at >= 30.0:
+            self.range_notice_at = now
+            self.get_logger().warning(
+                'No calibrated synchronized scan projection; using visual candidate filters only')
 
         if detections:
             self.lost_frame_count = 0

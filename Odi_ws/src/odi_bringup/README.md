@@ -147,3 +147,48 @@ three times, including one mission with no observations. Verify that the dashboa
 waits for reset completion, old markers disappear, and a visible bag can be detected
 in the next mission. Also cancel once during preparation and wait for `IDLE` before
 starting again.
+
+## Field tuning: mode display, observation candidates and return home
+
+`BehaviorState.exploration_mode` carries `FRONTIER`/`ROAM` to the web bridge.
+This changes the ROS message interface: stop the application and rebuild the
+whole workspace (`colcon build --symlink-install`), source the new installation,
+and restart all ODI application nodes together. Refresh the web page.
+
+Candidate parameters in `config/odi.yaml`:
+
+| Parameter | Initial value | Meaning |
+| --- | --- | --- |
+| `minimum_box_area_ratio` | `0.025` | Candidate box must occupy at least 2.5% of the image. This is not a metric distance. |
+| `minimum_detection_frames` | `3` | Require repeated matched detections before sending a candidate. |
+| `excluded_classes` | `['tv', 'laptop']` | Excluded from observation candidates; still visible in the YOLO preview. |
+| `reobserve_cooldown_sec` | `60.0` | After an encounter attempt, suppress the same class within 0.5m of the recent robot position. This also suppresses a second same-class object at that position temporarily. |
+| `maximum_observation_distance` | `2.0` | Reject farther candidates when calibrated scan projection provides an estimate; `0.0` disables this check. |
+| `camera_info_topic` | `/camera/camera_info` | Must match the image camera's calibrated CameraInfo publisher. |
+
+Short-term box overlap matching retains IDs when YOLO changes box order.
+It is not persistent identity tracking: a long occlusion or a large viewpoint
+change can create a new ID. The encounter cooldown is reset for each mission.
+
+Distance checks need CameraInfo matching the image dimensions with zero distortion,
+scan-to-camera TF, and image/scan timestamps within 0.25 seconds. Points are projected
+inside the central half of the box; at least three consistent returns are required.
+Without this association the metric distance check is skipped; visual filters remain
+active. A periodic warning identifies missing projection data. A 2D laser can still
+see a background surface rather than a raised object, so verify this association on
+the robot before relying on distance filtering. Objects beyond the room are not
+guaranteed to be excluded solely by this heuristic.
+
+Return Home uses `home_arrival_radius: 0.3` and `home_arrival_hold_sec: 0.8`.
+With fresh map TF inside that radius for the hold duration, it cancels the Nav2
+goal to avoid continued final-heading correction. Completion requires the terminal
+Nav2 result, fresh odometry indicating low linear/angular velocity for 0.4 seconds,
+and a final position still inside the radius. Missing/stale TF or odometry never
+counts as arrival. `home_arrival_radius: 0.0` disables the proximity shortcut.
+Other Nav2 goals and their tolerances are unchanged.
+
+Robot checks: confirm the web changes to ROAM, place a near bag and distant TV in
+view, and check both filtering and repeated-view behavior. During return, confirm
+that arrival is reported after stopping; if it fails, capture the Return Home
+distance/recovery log and any TF/odometry error. The defaults are initial tuning
+values and require validation in the actual room.

@@ -2000,6 +2000,7 @@ class BehaviorExecutorNode(Node):
     def publish_current_behavior(self) -> None:
         msg = BehaviorState()
         msg.behavior = self.current_behavior.value
+        msg.exploration_mode = self.exploration_mode
         msg.status = self.current_status.value
         msg.detail = self.current_detail
         msg.updated_at = self.get_clock().now().to_msg()
@@ -2041,5 +2042,4 @@ def main(args=None) -> None:
 
 if __name__ == "__main__":
     main()
-
 

@@ -9,6 +9,8 @@ import rclpy
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped
 from nav2_msgs.action import NavigateToPose
+from nav_msgs.msg import Odometry
+from rclpy.qos import qos_profile_sensor_data
 from rclpy.action import (
     ActionClient,
     ActionServer,
@@ -41,6 +43,9 @@ class ReturnHomeNode(Node):
 
         self._declare_parameters()
         self._read_parameters()
+        self.latest_motion = None
+        self.create_subscription(Odometry, '/odom', self._odom_callback,
+                                 qos_profile_sensor_data, callback_group=self.callback_group)
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -85,6 +90,8 @@ class ReturnHomeNode(Node):
         self.declare_parameter('home_wait_timeout_sec', 10.0)
         self.declare_parameter('navigation_server_timeout_sec', 5.0)
         self.declare_parameter('navigation_timeout_sec', 180.0)
+        self.declare_parameter('home_arrival_radius', 0.3)
+        self.declare_parameter('home_arrival_hold_sec', 0.8)
 
     def _read_parameters(self) -> None:
         """Read declared parameters into ordinary attributes."""
@@ -108,6 +115,28 @@ class ReturnHomeNode(Node):
         self.navigation_timeout_sec = self.get_parameter(
             'navigation_timeout_sec'
         ).value
+        self.home_arrival_radius = max(0.0, float(self.get_parameter('home_arrival_radius').value))
+        self.home_arrival_hold_sec = max(0.1, float(self.get_parameter('home_arrival_hold_sec').value))
+
+    def _odom_callback(self, message):
+        twist = message.twist.twist
+        self.latest_motion = (time.monotonic(), math.hypot(twist.linear.x, twist.linear.y),
+                              abs(twist.angular.z))
+
+    def _wait_for_stopped(self):
+        deadline = time.monotonic() + 3.0
+        stable_since = None
+        while rclpy.ok() and time.monotonic() < deadline:
+            now = time.monotonic()
+            motion = self.latest_motion
+            if motion and now-motion[0] < 0.5 and motion[1] <= 0.02 and motion[2] <= 0.05:
+                stable_since = now if stable_since is None else stable_since
+                if now-stable_since >= 0.4:
+                    return True
+            else:
+                stable_since = None
+            time.sleep(0.05)
+        return False
 
     def _configured_home_pose(self) -> PoseStamped:
         """Create a home pose from configured coordinates."""
@@ -233,6 +262,7 @@ class ReturnHomeNode(Node):
             )
             while rclpy.ok() and not send_future.done():
                 if time.monotonic() >= send_deadline:
+                    send_future.add_done_callback(self._cancel_late_goal)
                     return self._finish_aborted(
                         goal_handle,
                         'NavigateToPose goal response timed out',
@@ -259,7 +289,8 @@ class ReturnHomeNode(Node):
                 self.active_navigation_goal = navigation_goal_handle
 
             if goal_handle.is_cancel_requested:
-                self._cancel_navigation(navigation_goal_handle)
+                if not self._cancel_navigation(navigation_goal_handle):
+                    return self._finish_aborted(goal_handle, 'Could not confirm Nav2 cancellation')
                 return self._finish_canceled(
                     goal_handle,
                     'Return Home canceled before navigation',
@@ -269,10 +300,13 @@ class ReturnHomeNode(Node):
             navigation_deadline = (
                 time.monotonic() + self.navigation_timeout_sec
             )
+            inside_since = None
+            nearby_completion = False
 
             while rclpy.ok() and not result_future.done():
                 if goal_handle.is_cancel_requested:
-                    self._cancel_navigation(navigation_goal_handle)
+                    if not self._cancel_navigation(navigation_goal_handle):
+                        return self._finish_aborted(goal_handle, 'Could not confirm Nav2 cancellation')
                     return self._finish_canceled(
                         goal_handle,
                         'Return Home canceled during navigation',
@@ -284,6 +318,19 @@ class ReturnHomeNode(Node):
                         goal_handle,
                         'Return Home navigation timed out',
                     )
+
+                distance = self._distance_to_home(home_pose)
+                now = time.monotonic()
+                if self.home_arrival_radius > 0 and distance <= self.home_arrival_radius:
+                    inside_since = now if inside_since is None else inside_since
+                    if now-inside_since >= self.home_arrival_hold_sec:
+                        self.get_logger().info(f'Home radius reached: {distance:.2f} m; stopping Nav2')
+                        if not self._cancel_navigation(navigation_goal_handle, result_future):
+                            return self._finish_aborted(goal_handle, 'Nav2 did not stop at home')
+                        nearby_completion = True
+                        break
+                else:
+                    inside_since = None
 
                 time.sleep(0.05)
 
@@ -300,12 +347,20 @@ class ReturnHomeNode(Node):
                     'NavigateToPose returned no result',
                 )
 
-            if wrapped_result.status != GoalStatus.STATUS_SUCCEEDED:
+            if (wrapped_result.status != GoalStatus.STATUS_SUCCEEDED
+                    and not (nearby_completion and wrapped_result.status == GoalStatus.STATUS_CANCELED)):
                 return self._finish_aborted(
                     goal_handle,
                     'Return navigation failed: '
                     f'status={wrapped_result.status}',
                 )
+
+            if not self._wait_for_stopped():
+                return self._finish_aborted(goal_handle, 'Fresh odometry did not confirm a stopped robot')
+            if goal_handle.is_cancel_requested:
+                return self._finish_canceled(goal_handle, 'Return Home canceled while stopping')
+            if nearby_completion and self._distance_to_home(home_pose) > self.home_arrival_radius:
+                return self._finish_aborted(goal_handle, 'Robot left home radius while stopping')
 
             self._publish_feedback(
                 goal_handle,
@@ -341,22 +396,26 @@ class ReturnHomeNode(Node):
         )
 
     def _distance_to_home(self, home_pose: PoseStamped) -> float:
-        """Estimate the starting distance for progress feedback."""
+        """Use fresh map TF for arrival; missing/stale TF is never arrival."""
         try:
             transform = self.tf_buffer.lookup_transform(
                 self.map_frame,
                 self.robot_frame,
                 Time(),
-                timeout=Duration(seconds=0.5),
+                timeout=Duration(seconds=0.05),
             )
-            return math.hypot(
+            age = (self.get_clock().now() - Time.from_msg(transform.header.stamp)).nanoseconds * 1e-9
+            if age < -0.1 or age > 1.0:
+                return math.inf
+            distance = math.hypot(
                 home_pose.pose.position.x
                 - transform.transform.translation.x,
                 home_pose.pose.position.y
                 - transform.transform.translation.y,
             )
+            return distance if math.isfinite(distance) else math.inf
         except Exception:  # noqa: BLE001
-            return 0.0
+            return math.inf
 
     def _navigation_feedback(
         self,
@@ -369,7 +428,7 @@ class ReturnHomeNode(Node):
             return
 
         distance_remaining = feedback_message.feedback.distance_remaining
-        if initial_distance > 0.05:
+        if math.isfinite(initial_distance) and initial_distance > 0.05:
             fraction = 1.0 - distance_remaining / initial_distance
             progress = 0.20 + max(0.0, min(1.0, fraction)) * 0.75
         else:
@@ -379,7 +438,8 @@ class ReturnHomeNode(Node):
             goal_handle,
             'NAVIGATING',
             progress,
-            f'Distance remaining: {distance_remaining:.2f} m',
+            f'Distance remaining: {distance_remaining:.2f} m; '
+            f'recoveries={feedback_message.feedback.number_of_recoveries}',
         )
 
     @staticmethod
@@ -396,17 +456,28 @@ class ReturnHomeNode(Node):
         feedback.message = message
         goal_handle.publish_feedback(feedback)
 
-    def _cancel_navigation(self, navigation_goal_handle) -> None:
-        """Send a bounded cancellation request to the active Nav2 goal."""
-        cancel_future = navigation_goal_handle.cancel_goal_async()
-        deadline = time.monotonic() + 3.0
-        while rclpy.ok() and not cancel_future.done():
-            if time.monotonic() >= deadline:
-                self.get_logger().warning(
-                    'Return navigation cancellation response timed out'
-                )
-                return
+    def _cancel_late_goal(self, future):
+        try:
+            handle = future.result()
+            if handle is not None and handle.accepted:
+                handle.cancel_goal_async()
+        except Exception as error:
+            self.get_logger().error(f'Late Nav2 cancellation failed: {error}')
+
+    def _cancel_navigation(self, navigation_goal_handle, result_future=None) -> bool:
+        """Wait for a terminal result, not merely acceptance of cancellation."""
+        if result_future is None:
+            result_future = navigation_goal_handle.get_result_async()
+        navigation_goal_handle.cancel_goal_async()
+        deadline = time.monotonic() + 5.0
+        while rclpy.ok() and not result_future.done() and time.monotonic() < deadline:
             time.sleep(0.05)
+        if not result_future.done():
+            self.get_logger().error('Return navigation terminal result timed out')
+            return False
+        result = result_future.result()
+        return result is not None and result.status in (
+            GoalStatus.STATUS_CANCELED, GoalStatus.STATUS_SUCCEEDED)
 
     @staticmethod
     def _finish_canceled(
