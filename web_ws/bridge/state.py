@@ -247,7 +247,7 @@ def queue_mission_command(name, send_command, allowed_states=None):
             return 409, 'another command is still pending'
         if allowed_states is not None and STATE['mission'] not in allowed_states:
             return 409, 'command is not available in the current mission state'
-        if name == 'START' and (
+        if name in ('START', 'NORMAL') and (
             _mission_received_at is None
             or time.monotonic() - _mission_received_at > 5.0
         ):
@@ -259,6 +259,7 @@ def queue_mission_command(name, send_command, allowed_states=None):
         STATE['pending_command'] = name
         STATE['mission'] = {
             'START': 'PREPARING', 'STOP': 'RETURNING', 'RESET': 'RESETTING',
+            'NORMAL': 'NORMAL_STARTING', 'NORMAL_STOP': 'NORMAL_STOPPING',
         }[name]
         return 202, ''
 
@@ -273,8 +274,19 @@ def apply_mission_report(mission, session_id):
     with LOCK:
         _mission_received_at = time.monotonic()
         pending = STATE['pending_command']
-        if pending == 'RESET':
-            if mission == 'RESETTING':
+        if pending == 'NORMAL':
+            if mission == 'IDLE' or session_id == _command_session_id:
+                return False
+            STATE['pending_command'] = ''
+        elif pending == 'NORMAL_STOP':
+            if mission == 'NORMAL_STOPPING':
+                _reset_seen = True
+            elif mission == 'IDLE' and not session_id and _reset_seen:
+                STATE['pending_command'] = ''
+            else:
+                return False
+        elif pending == 'RESET':
+            if mission in ('RESETTING', 'NORMAL_STOPPING'):
                 _reset_seen = True
             elif mission == 'IDLE' and not session_id and _reset_seen:
                 STATE['pending_command'] = ''

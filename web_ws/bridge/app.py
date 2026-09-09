@@ -297,6 +297,25 @@ def create_app():
 
         return jsonify(command="START", accepted=True), 202
 
+    @app.post('/normal/start')
+    def start_normal():
+        if config.USE_FAKE:
+            return jsonify(error='Normal mode requires the real ROS connection'), 503
+        status, error = state.queue_mission_command('NORMAL', commands.send, allowed_states={'IDLE'})
+        if error:
+            return jsonify(error=error), status
+        return jsonify(accepted=True), status
+
+    @app.post('/normal/stop')
+    def stop_normal():
+        if config.USE_FAKE:
+            return jsonify(error='Normal mode requires the real ROS connection'), 503
+        status, error = state.queue_mission_command('NORMAL_STOP', commands.send,
+            allowed_states={'NORMAL', 'NORMAL_STOPPING'})
+        if error:
+            return jsonify(error=error), status
+        return jsonify(accepted=True), status
+
     @app.post("/sessions/stop")
     def stop_session():
         """Request an orderly stop, return home, and reflection."""

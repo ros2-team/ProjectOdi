@@ -38,6 +38,7 @@ app 을 import 하지 않는다 — 이 파일은 웹이 존재하는지도 모�
 # ════════════════════════════════════════════════════════════
 
 import functools
+import json
 import math
 import threading
 import time
@@ -133,6 +134,7 @@ class OdiBridgeNode(Node):
 
     def __init__(self):
         super().__init__("odi_web_bridge")
+        self.create_subscription(String, '/normal/status', self.on_normal, 10)
 
         MEDIA_DIR.mkdir(parents=True, exist_ok=True)
         (MEDIA_DIR / "obs").mkdir(exist_ok=True)
@@ -349,6 +351,14 @@ class OdiBridgeNode(Node):
             self._exploring_since = time.time()
         elif msg.state in ("IDLE", "PREPARING", "COMPLETED"):
             self._exploring_since = None
+
+    @safe
+    def on_normal(self, msg):
+        data = json.loads(msg.data)
+        snapshot = state.snapshot()
+        if (snapshot['mission'] in ('NORMAL', 'NORMAL_STOPPING')
+                and data.get('session_id') == snapshot['session_id']):
+            state.patch(normal=data)
 
     @safe
     def on_behavior(self, msg):

@@ -52,3 +52,24 @@ yolo_node:
     maximum_observation_distance: 2.0
     camera_info_topic: /camera/camera_info
     device: cpu
+normal_node:
+  ros__parameters:
+    image_width: 320
+    image_height: 240
+    target_classes: [bottle, backpack, cup]
+    confidence: 0.6
+    minimum_area_ratio: 0.02
+    cooldown_sec: 60.0
+    rest_sec: 8.0
+    move_timeout_sec: 30.0
+    track_timeout_sec: 6.0
+    # Calibrate signs, neutral positions and limits on the actual mount.
+    pan_sign: -1.0
+    tilt_sign: 1.0
+    pan_home: 90.0
+    tilt_home: 90.0
+    pan_min: 60.0
+    pan_max: 120.0
+    tilt_min: 70.0
+    tilt_max: 110.0
+    nod_degrees: 6.0

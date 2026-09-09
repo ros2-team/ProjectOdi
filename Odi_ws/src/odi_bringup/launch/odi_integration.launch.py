@@ -23,6 +23,8 @@ def generate_launch_description() -> LaunchDescription:
     use_world_memory = LaunchConfiguration('use_world_memory')
 
     return LaunchDescription([
+        Node(package='odi_normal', executable='normal_node', name='normal_node',
+             output='screen', parameters=[parameters_file]),
         DeclareLaunchArgument(
             'use_detection',
             default_value='true',

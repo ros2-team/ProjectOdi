@@ -77,6 +77,8 @@ class WorldMemoryNode(Node):
             message
     ):
 
+        if message.session_id.startswith('normal-'):
+            return  # Normal mode does not create exploration diary sessions.
         if not message.session_id:
             self.get_logger().debug(
                 "\n MissionState ignored : session_id is empty"

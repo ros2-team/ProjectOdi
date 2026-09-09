@@ -42,6 +42,14 @@ def _remote_script(action: str) -> str:
             + '; exec ros2 launch turtlebot3_bringup camera.launch.py '
             + 'format:=YUYV width:=320 height:=240'
         ).replace('\n', '; ')
+        head_script = ''
+        head_setup = os.environ.get('ODI_HEAD_SETUP', '')
+        if head_setup:
+            head_command = (setup_commands + '; source ' + shlex.quote(head_setup)
+                + '; exec ros2 run odi_normal head_bridge --ros-args -p enabled:=true -p port:='
+                + shlex.quote(os.environ.get('ODI_HEAD_PORT', '/dev/odi_head')))
+            head_script = (f'tmux new-window -t {REMOTE_SESSION} -n head\n'
+                f'tmux send-keys -t {REMOTE_SESSION}:head {shlex.quote(head_command)} C-m\n')
 
         return f'''set -eu
 if ! command -v tmux >/dev/null 2>&1; then
@@ -56,6 +64,7 @@ tmux new-session -d -s {REMOTE_SESSION} -n bringup
 tmux send-keys -t {REMOTE_SESSION}:bringup {bringup_command!r} C-m
 tmux new-window -t {REMOTE_SESSION} -n camera
 tmux send-keys -t {REMOTE_SESSION}:camera {camera_command!r} C-m
+{head_script}
 echo "ODI robot bringup and camera started"
 '''
 
@@ -64,6 +73,7 @@ echo "ODI robot bringup and camera started"
 if tmux has-session -t {REMOTE_SESSION} 2>/dev/null; then
     tmux send-keys -t {REMOTE_SESSION}:bringup C-c
     tmux send-keys -t {REMOTE_SESSION}:camera C-c
+    tmux send-keys -t {REMOTE_SESSION}:head C-c 2>/dev/null || true
     sleep 1
     tmux kill-session -t {REMOTE_SESSION}
     echo "ODI robot session stopped"

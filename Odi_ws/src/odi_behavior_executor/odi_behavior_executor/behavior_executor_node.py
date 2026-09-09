@@ -376,6 +376,8 @@ class BehaviorExecutorNode(Node):
         )
 
     def run_selector(self) -> None:
+        if self.blackboard.mission_state in ('NORMAL', 'NORMAL_STOPPING'):
+            return  # NormalModeNode exclusively owns motion in these states.
         # 우선 순위 높을 수록 위임
         if self.blackboard.emergency:
             self.set_behavior(
@@ -2042,4 +2044,3 @@ def main(args=None) -> None:
 
 if __name__ == "__main__":
     main()
-

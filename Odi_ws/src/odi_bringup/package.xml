@@ -15,6 +15,7 @@
   <exec_depend>lifecycle_msgs</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>odi_interfaces</exec_depend>
+  <exec_depend>odi_normal</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>turtlebot3_cartographer</exec_depend>

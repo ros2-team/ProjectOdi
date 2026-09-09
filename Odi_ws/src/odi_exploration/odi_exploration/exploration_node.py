@@ -1,6 +1,7 @@
 """Explore unknown space through frontier goals and Nav2 navigation."""
 
 import math
+import json
 import threading
 import time
 
@@ -21,6 +22,8 @@ from rclpy.time import Time
 from tf2_ros import Buffer, TransformListener
 
 from odi_interfaces.action import Explore
+from odi_interfaces.msg import MissionState
+from std_msgs.msg import String
 
 from odi_exploration.frontier_detector import FrontierDetector
 from odi_exploration.navigation_manager import (
@@ -44,6 +47,12 @@ class ExplorationNode(Node):
         self.current_session_id = ''
         self.visited_goals: list[tuple[float, float]] = []
         self.failed_goals: list[tuple[float, float]] = []
+        self.normal_lease = ('', 0.0)
+        self.mission_report = ('', '', 0.0)
+        self.create_subscription(String, '/normal/status', self.on_normal_status, 10,
+                                 callback_group=self.callback_group)
+        self.create_subscription(MissionState, '/mission/state', self.on_mission_report, 10,
+                                 callback_group=self.callback_group)
 
         self._declare_parameters()
         self._read_parameters()
@@ -93,6 +102,22 @@ class ExplorationNode(Node):
         self.get_logger().info(
             'Exploration Action Server is running'
         )
+
+    def on_normal_status(self, msg):
+        try:
+            data = json.loads(msg.data)
+            self.normal_lease = (data['session_id'], time.monotonic())
+        except (ValueError, KeyError, TypeError):
+            pass
+
+    def on_mission_report(self, msg):
+        self.mission_report = (msg.session_id, msg.state, time.monotonic())
+
+    def normal_authorized(self, session):
+        now = time.monotonic()
+        return (self.normal_lease[0] == session and now-self.normal_lease[1] < 3
+                and self.mission_report[0] == session and self.mission_report[1] == 'NORMAL'
+                and now-self.mission_report[2] < 3)
 
     def _declare_parameters(self) -> None:
         """Declare configurable exploration and navigation values."""
@@ -200,7 +225,7 @@ class ExplorationNode(Node):
             )
             return GoalResponse.REJECT
 
-        if mode not in {'FRONTIER', 'ROAM'}:
+        if mode not in {'FRONTIER', 'ROAM', 'SHORT_ROAM'}:
             self.get_logger().warning(
                 f'Explore goal rejected: unsupported mode={mode}'
             )
@@ -248,7 +273,8 @@ class ExplorationNode(Node):
                 )
 
             while rclpy.ok():
-                if goal_handle.is_cancel_requested:
+                if (goal_handle.is_cancel_requested or
+                        (mode == 'SHORT_ROAM' and not self.normal_authorized(request.session_id))):
                     self.navigation.cancel_active_goal()
                     return self._finish_canceled(
                         goal_handle,
@@ -299,8 +325,13 @@ class ExplorationNode(Node):
                         robot_x,
                         robot_y,
                         robot_yaw,
+                        short=(mode == 'SHORT_ROAM'),
                     )
                     if selected is None:
+                        if mode == 'SHORT_ROAM':
+                            self.visited_goals.clear()  # Revisit only after the next rest interval.
+                            return self._finish_succeeded(goal_handle, status='NO_GOAL',
+                                visited_area_id='', message='No nearby safe goal')
                         self.visited_goals.clear()
                         time.sleep(0.5)
                         continue
@@ -322,8 +353,10 @@ class ExplorationNode(Node):
 
                 outcome, message = self.navigation.navigate(
                     goal_pose,
+                    strict=(mode == 'SHORT_ROAM'),
                     cancel_requested=lambda: (
-                        goal_handle.is_cancel_requested
+                        goal_handle.is_cancel_requested or
+                        (mode == 'SHORT_ROAM' and not self.normal_authorized(request.session_id))
                     ),
                 )
 
@@ -348,6 +381,9 @@ class ExplorationNode(Node):
                             goal_pose.pose.position.y,
                         )
                     )
+                    if mode == 'SHORT_ROAM':
+                        return self._finish_succeeded(goal_handle, status='STEP_COMPLETED',
+                            visited_area_id=last_area_id, message='Short movement completed')
                     navigation_failures = 0
                     self.get_logger().info(
                         f'Exploration area reached: {area_id}'
@@ -355,6 +391,8 @@ class ExplorationNode(Node):
                     time.sleep(0.3)
                     continue
 
+                if mode == 'SHORT_ROAM':
+                    return self._finish_aborted(goal_handle, last_area_id, message)
                 self.failed_goals.append(
                     (
                         goal_pose.pose.position.x,
@@ -497,6 +535,7 @@ class ExplorationNode(Node):
         robot_x: float,
         robot_y: float,
         robot_yaw: float,
+        short: bool = False,
     ) -> tuple[str, PoseStamped] | None:
         """Choose a safe cell with useful distance and heading continuity."""
         map_message = self._get_latest_map()
@@ -506,6 +545,8 @@ class ExplorationNode(Node):
         candidates = []
         step = max(1, int(self.roam_sampling_step))
 
+        minimum = 0.5 if short else self.roam_minimum_goal_distance
+        maximum = 1.2 if short else self.roam_maximum_goal_distance
         for cell_y in range(0, height, step):
             for cell_x in range(0, width, step):
                 index = cell_y * width + cell_x
@@ -529,21 +570,21 @@ class ExplorationNode(Node):
                     world_y - robot_y,
                 )
                 if not (
-                    self.roam_minimum_goal_distance
+                    minimum
                     <= distance
-                    <= self.roam_maximum_goal_distance
+                    <= maximum
                 ):
                     continue
                 if self._was_attempted(world_x, world_y):
                     continue
 
                 target_distance = (
-                    self.roam_minimum_goal_distance
-                    + self.roam_maximum_goal_distance
+                    minimum
+                    + maximum
                 ) / 2.0
                 distance_span = max(
-                    self.roam_maximum_goal_distance
-                    - self.roam_minimum_goal_distance,
+                    maximum
+                    - minimum,
                     0.1,
                 )
                 distance_score = max(

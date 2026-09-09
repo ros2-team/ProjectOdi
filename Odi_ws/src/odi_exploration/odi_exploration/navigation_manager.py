@@ -53,8 +53,11 @@ class NavigationManager:
         self,
         pose: PoseStamped,
         cancel_requested: Callable[[], bool],
+        strict: bool = False,
     ) -> tuple[NavigationOutcome, str]:
         """Navigate to a pose while observing an external cancel request."""
+        if strict:
+            return self._navigate_strict(pose, cancel_requested)
         if not self.client.wait_for_server(
             timeout_sec=self.server_timeout_sec,
         ):
@@ -167,6 +170,66 @@ class NavigationManager:
             with self._goal_lock:
                 if self._active_goal_handle is goal_handle:
                     self._active_goal_handle = None
+
+    def _navigate_strict(self, pose, cancel_requested):
+        """Normal mode retains ownership through late acceptance and terminal result.
+
+        A lost response intentionally blocks completion rather than allowing head
+        motion or another mission while an unconfirmed navigation goal exists.
+        """
+        if not self.client.wait_for_server(timeout_sec=self.server_timeout_sec):
+            return NavigationOutcome.ERROR, 'Nav2 unavailable'
+        if cancel_requested():
+            return NavigationOutcome.CANCELED, 'Canceled before sending navigation'
+        goal = NavigateToPose.Goal()
+        goal.pose = pose
+        goal.pose.header.stamp = self.node.get_clock().now().to_msg()
+        sent = self.client.send_goal_async(goal)
+        limit = time.monotonic()+self.server_timeout_sec
+        stopping = False
+        while rclpy.ok() and not sent.done():
+            if time.monotonic() > limit or cancel_requested():
+                if not stopping:
+                    self.node.get_logger().warning('Waiting for late Nav2 acceptance before canceling')
+                stopping = True
+            time.sleep(.05)
+        if not sent.done():
+            return NavigationOutcome.ERROR, 'Shutdown before Nav2 response'
+        handle = sent.result()
+        if handle is None or not handle.accepted:
+            return NavigationOutcome.REJECTED, 'Nav2 rejected short movement'
+        with self._goal_lock:
+            self._active_goal_handle = handle
+        result = handle.get_result_async()
+        deadline = time.monotonic()+self.navigation_timeout_sec
+        cancel = None
+        cancel_at = float('-inf')
+        while rclpy.ok():
+            stopping = stopping or cancel_requested() or time.monotonic() > deadline
+            if result.done():
+                try:
+                    wrapped = result.result()
+                    if wrapped is not None and wrapped.status in (4, 5, 6):
+                        with self._goal_lock:
+                            self._active_goal_handle = None
+                        if stopping or wrapped.status == 5:
+                            return NavigationOutcome.CANCELED, 'Nav2 reached terminal state after cancel'
+                        if wrapped.status == 4:
+                            return NavigationOutcome.SUCCEEDED, 'Short movement completed'
+                        return NavigationOutcome.FAILED, 'Short movement aborted by Nav2'
+                except Exception as error:
+                    self.node.get_logger().error('Waiting for Nav2 terminal confirmation: '+str(error))
+                stopping = True
+                result = handle.get_result_async()
+            if stopping and time.monotonic()-cancel_at > 1 and (cancel is None or cancel.done()):
+                try:
+                    cancel = handle.cancel_goal_async()
+                except Exception as error:
+                    self.node.get_logger().warning('Retrying Nav2 cancellation: '+str(error))
+                cancel_at = time.monotonic()
+            time.sleep(.05)
+        handle.cancel_goal_async()
+        return NavigationOutcome.ERROR, 'Shutdown while waiting for Nav2 termination'
 
     def cancel_active_goal(self) -> None:
         """Request cancellation of the currently active Nav2 goal."""

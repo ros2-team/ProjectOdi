@@ -1,6 +1,7 @@
 
 import uuid
 import time
+import json
 from enum import Enum
 
 import rclpy
@@ -24,6 +25,8 @@ class MissionStatus(str, Enum):
     COMPLETED = "COMPLETED"
     RESETTING = "RESETTING"
     ERROR = "ERROR"
+    NORMAL = 'NORMAL'
+    NORMAL_STOPPING = 'NORMAL_STOPPING'
 
 class MissionManagerNode(Node):
     def __init__(self) -> None:
@@ -66,6 +69,7 @@ class MissionManagerNode(Node):
         self.preparation_phase = ''
         self.reset_acknowledged = False
         self.preparation_poll = self.create_timer(0.1, self.poll_preparation)
+        self.normal_events = self.create_subscription(String, '/normal/event', self.normal_event, 10)
         #-----
 
         self.get_logger().info("Mission Manager Node is Running.")
@@ -75,9 +79,13 @@ class MissionManagerNode(Node):
     def command_callback(self, msg: String) -> None:
         command = msg.data.strip().upper()
         self.get_logger().info(f"command updated = {command}")
-        if command == "START":
+        if command == 'NORMAL':
+            if self.current_state == MissionStatus.IDLE:
+                self.session_id = 'normal-' + str(uuid.uuid4())
+                self.change_status(MissionStatus.NORMAL, 'Normal mode starting')
+        elif command == "START":
             self.handle_start_command()
-        elif command == "STOP":
+        elif command in ("STOP", "NORMAL_STOP"):
             self.handle_stop_command()
         elif command == "RESET":
             self.handle_reset_command()
@@ -173,6 +181,9 @@ class MissionManagerNode(Node):
         )
 
     def handle_stop_command(self) -> None:
+        if self.current_state in (MissionStatus.NORMAL, MissionStatus.NORMAL_STOPPING):
+            self.change_status(MissionStatus.NORMAL_STOPPING, 'Stopping normal mode and centering camera')
+            return
         if self.current_state == MissionStatus.PREPARING:
             self.handle_reset_command()
             return
@@ -198,6 +209,10 @@ class MissionManagerNode(Node):
         )
 
     def handle_reset_command(self) -> None:
+
+        if self.current_state in (MissionStatus.NORMAL, MissionStatus.NORMAL_STOPPING):
+            self.handle_stop_command()
+            return
 
         if self.current_state == MissionStatus.RESETTING:
             return
@@ -253,6 +268,20 @@ class MissionManagerNode(Node):
         self.get_logger().warning(
             f"Unknown behavior event : {event}"
         )
+
+    def normal_event(self, message):
+        try:
+            event = json.loads(message.data)
+        except (ValueError, TypeError):
+            return
+        if (event.get('session_id') != self.session_id or self.current_state not in
+                (MissionStatus.NORMAL, MissionStatus.NORMAL_STOPPING)):
+            return
+        if event.get('event') == 'FAULT':
+            self.change_status(MissionStatus.NORMAL_STOPPING, event.get('detail', 'Normal mode fault'))
+        elif event.get('event') == 'STOPPED':
+            self.session_id = ''
+            self.change_status(MissionStatus.IDLE, event.get('detail', 'Normal mode stopped'))
 
     def handle_exploration_finished(self) -> None:
         if self.current_state != MissionStatus.EXPLORING:
@@ -403,8 +432,6 @@ def main(args = None) -> None:
 
 if __name__ == "__main__":
     main()
-
-
 
 
 

@@ -204,6 +204,12 @@ function paint(){
       else if(mission === 'PREPARING'){  renderInterlude('나갈 준비를 하고 있어요',
                                                          '새 지도를 만들고 출발 위치를 준비하고 있어요.');
                                          preparingSince = Date.now(); }
+      else if(['NORMAL', 'NORMAL_STARTING', 'NORMAL_STOPPING'].includes(mission)) {
+        renderInterlude('일반모드', '주변을 살펴보고 있어요.');
+        const hint = document.getElementById('hint');
+        hint.innerHTML = '<p id="normalStatus"></p><img src="/camera/stream" alt="오디가 바라보는 화면" style="width:100%;max-width:640px;border-radius:16px"><p><button class="link" id="normalStop">일반모드 종료</button></p>';
+        document.getElementById('normalStop').addEventListener('click', () => normalCommand('/normal/stop'));
+      }
       else if(mission === 'REFLECTING')  renderInterlude('오늘 있었던 일을 정리하는 중',
                                                          '사진을 고르고 있어요. 잠시만요.');
       else if(mission === 'RESETTING')  renderInterlude('다음 탐험을 준비하고 있어요',
@@ -221,6 +227,18 @@ function paint(){
     /* 값 갱신은 매초 */
     if(mission === 'IDLE')           paintIdle();
     else if(mission === 'PREPARING') paintPreparing();
+    else if(['NORMAL', 'NORMAL_STARTING', 'NORMAL_STOPPING'].includes(mission)) {
+      const labels = {WAIT_HEAD:'카메라 연결을 확인하고 있어요', HOMING:'카메라를 정면으로 맞추고 있어요',
+        REST:'잠시 쉬고 있어요', MOVING:'가까운 곳을 둘러보고 있어요', BRAKING:'물체를 바라보려고 멈추고 있어요',
+        TRACKING:'물체를 바라보고 있어요', NOD_DOWN:'관심을 표현하고 있어요', NOD_UP:'관심을 표현하고 있어요',
+        RETURN_HEAD:'다시 주변을 살펴볼 준비를 해요', STOPPING:'멈추고 카메라를 정면으로 돌리고 있어요'};
+      const status = document.getElementById('normalStatus');
+      if(status) status.textContent = mission === 'NORMAL_STOPPING' ?
+        '이동 종료와 카메라 정면 복귀를 기다리고 있어요.' :
+        ((S.normal && S.normal.detail) || labels[S.normal && S.normal.stage] || '일반모드를 준비하고 있어요');
+      const stop = document.getElementById('normalStop');
+      if(stop) stop.disabled = mission !== 'NORMAL';
+    }
     return;
   }
 
@@ -249,6 +267,22 @@ function paint(){
    ★ 시작 버튼은 여전히 유일한 초점이다.
      카메라와 배터리를 얹되, 둘 다 버튼을 '설명하는' 자리에 둔다.
      카메라 = 살아있다는 증거, 배터리 = 나갈 수 있는지의 근거. */
+async function normalCommand(url){
+  const button = document.getElementById(url.endsWith('start') ? 'normalBtn' : 'normalStop');
+  if(button) button.disabled = true;
+  try {
+    const response = await fetch(url, {method:'POST'});
+    const body = await response.json();
+    if(!response.ok) throw new Error(body.error || '명령을 전달하지 못했어요');
+    S.mission = url.endsWith('start') ? 'NORMAL_STARTING' : 'NORMAL_STOPPING';
+    paint();
+  } catch(error) {
+    const hint = document.getElementById('gate') || document.getElementById('normalStatus');
+    if(hint) hint.textContent = error.message;
+    if(button) button.disabled = false;
+  }
+}
+
 function renderIdle(){
   sending = false;
 
@@ -282,12 +316,14 @@ function renderIdle(){
       </div>
 
       <button class="start" id="startBtn">탐험 보내기</button>
+      <button class="start" id="normalBtn">일반모드 시작</button>
       <p class="gate" id="gate">상태를 확인하는 중</p>
 
       <div class="past" id="pastList"></div>
     </div>`;
 
   document.getElementById('startBtn').addEventListener('click', startMission);
+  document.getElementById('normalBtn').addEventListener('click', () => normalCommand('/normal/start'));
 
   /* 대기 화면 전용 참조. el 은 index.html 의 고정 엘리먼트를 담고 있고,
      여기 것들은 renderIdle 이 돌 때마다 새로 만들어지므로 그때 갱신한다. */
@@ -352,6 +388,7 @@ function paintIdle(){
 
   const blocked = !!(b && !b.ready);
   el.startBtn.disabled = blocked;
+  document.getElementById('normalBtn').disabled = blocked;
   el.startBtn.textContent = '탐험 보내기';
 
   if(!b){
