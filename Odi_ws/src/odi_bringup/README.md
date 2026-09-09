@@ -192,3 +192,24 @@ view, and check both filtering and repeated-view behavior. During return, confir
 that arrival is reported after stopping; if it fails, capture the Return Home
 distance/recovery log and any TF/odometry error. The defaults are initial tuning
 values and require validation in the actual room.
+# 탐험마다 새 지도 만들기
+
+새 START는 PREPARING 상태에서 `/odi/prepare_mapping`을 요청합니다.
+터미널 1의 `mapping_supervisor`가 자신이 실행한 Nav2와 Cartographer를
+종료하고 다시 실행합니다. SBC 브링업과 카메라는 계속 실행합니다.
+새 `/map`, 최신 로봇 TF, Nav2 활성 상태를 확인한 뒤 새 지도 기준의
+출발 위치를 `/return_home/set_home_pose`로 등록하고 EXPLORING으로 전환합니다.
+기존 DB 일기와 관찰 기록은 삭제하지 않습니다.
+
+이 변경을 처음 적용할 때에는 터미널 2와 터미널 1을 모두 종료한 뒤
+전체 워크스페이스를 빌드하고 두 터미널을 다시 실행해야 합니다.
+이후에는 웹에서 새 탐험을 시작할 때마다 자동으로 새 지도를 만듭니다.
+출발 준비에는 수십 초가 걸릴 수 있습니다. 준비 실패 시 ERROR로 전환하고
+출발하지 않으므로 터미널 1 로그를 확인해 주세요.
+준비 중 집으로 돌아가기/취소는 복귀 대신 준비 취소로 처리합니다.
+진행 중인 지도 준비 요청이 끝나기 전에는 다음 탐험을 시작하지 않습니다.
+준비 요청 응답이 유실되어 RESETTING이 계속되면 두 터미널을 재시작합니다.
+
+SLAM 또는 Nav2를 따로 실행하는 진단 구성(`use_slam:=false` 또는
+`use_nav2:=false`)에서는 자동 지도 준비 서비스를 제공하지 않습니다.
+전체 탐험에는 기본 로봇 준비 구성을 사용하고 별도 SLAM을 중복 실행하지 마세요.

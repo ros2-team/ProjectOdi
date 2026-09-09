@@ -1,10 +1,12 @@
 
 import uuid
+import time
 from enum import Enum
 
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
+from odi_interfaces.srv import PrepareMapping, SetHomePose
 
 from odi_interfaces.msg import (
     MissionState,
@@ -58,6 +60,12 @@ class MissionManagerNode(Node):
 
         # 준비 과정을 임시로 타이머로 대체를 위한 변수임
         self.preparing_timer = None
+        self.mapping_client = self.create_client(PrepareMapping, '/odi/prepare_mapping')
+        self.home_client = self.create_client(SetHomePose, '/return_home/set_home_pose')
+        self.preparation_future = None
+        self.preparation_phase = ''
+        self.reset_acknowledged = False
+        self.preparation_poll = self.create_timer(0.1, self.poll_preparation)
         #-----
 
         self.get_logger().info("Mission Manager Node is Running.")
@@ -106,11 +114,48 @@ class MissionManagerNode(Node):
             MissionStatus.PREPARING,
             "Checking systems for exploring.....",
         )
-        #센서 준비 과정을 지금은 타이머로만 설정해 놓음
-        self.preparing_timer = self.create_timer(
-            2.0,
-            self.complete_preparing,
-        )
+        self.preparation_phase = 'mapping'
+        self.preparation_deadline = time.monotonic() + 120.0
+        self.reset_acknowledged = False
+
+    def poll_preparation(self) -> None:
+        future = self.preparation_future
+        if self.current_state != MissionStatus.PREPARING:
+            # Keep the pending request until the supervisor has actually stopped.
+            if future is not None and future.done():
+                self.preparation_future = None
+            if self.current_state == MissionStatus.RESETTING and self.reset_acknowledged:
+                self.finish_reset_if_ready()
+            return
+        try:
+            if time.monotonic() >= self.preparation_deadline:
+                raise RuntimeError('Fresh map preparation timed out; check terminal 1')
+            if future is None:
+                client = self.mapping_client if self.preparation_phase == 'mapping' else self.home_client
+                if not client.service_is_ready():
+                    return
+                if self.preparation_phase == 'mapping':
+                    request = PrepareMapping.Request()
+                    request.session_id = self.session_id
+                else:
+                    request = SetHomePose.Request()
+                    request.session_id = self.session_id
+                    request.pose = self.prepared_home_pose
+                self.preparation_future = client.call_async(request)
+                return
+            if not future.done():
+                return
+            self.preparation_future = None
+            result = future.result()
+            if result is None or not result.success:
+                raise RuntimeError(getattr(result, 'message', 'Preparation returned no result'))
+            if self.preparation_phase == 'mapping':
+                self.prepared_home_pose = result.home_pose
+                self.preparation_phase = 'home'
+            else:
+                self.complete_preparing()
+        except Exception as error:
+            self.change_status(MissionStatus.ERROR, str(error))
 
     def complete_preparing(self) -> None:
         #준비 타이머 해제
@@ -128,6 +173,9 @@ class MissionManagerNode(Node):
         )
 
     def handle_stop_command(self) -> None:
+        if self.current_state == MissionStatus.PREPARING:
+            self.handle_reset_command()
+            return
         if self.current_state not in {
             MissionStatus.PREPARING,
             MissionStatus.EXPLORING,
@@ -150,6 +198,10 @@ class MissionManagerNode(Node):
         )
 
     def handle_reset_command(self) -> None:
+
+        if self.current_state == MissionStatus.RESETTING:
+            return
+        self.reset_acknowledged = False
 
         # 준비 타이머 해제
         if self.preparing_timer is not None:
@@ -245,6 +297,12 @@ class MissionManagerNode(Node):
             )
             return
 
+        self.reset_acknowledged = True
+        self.finish_reset_if_ready()
+
+    def finish_reset_if_ready(self) -> None:
+        if self.preparation_future is not None:
+            return
         completed_session_id = self.session_id
         self.session_id = ''
 

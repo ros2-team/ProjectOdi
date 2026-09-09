@@ -202,7 +202,7 @@ function paint(){
         renderIdle();
       }
       else if(mission === 'PREPARING'){  renderInterlude('나갈 준비를 하고 있어요',
-                                                         '센서와 지도를 확인하고 있어요.');
+                                                         '새 지도를 만들고 출발 위치를 준비하고 있어요.');
                                          preparingSince = Date.now(); }
       else if(mission === 'REFLECTING')  renderInterlude('오늘 있었던 일을 정리하는 중',
                                                          '사진을 고르고 있어요. 잠시만요.');
@@ -468,17 +468,15 @@ function renderInterlude(title, sub){
      발표 중에 이렇게 되면 새로고침 말고는 방법이 없다.
      기다린 시간을 알려주고 되돌아갈 버튼을 주는 게 낫다.
 
-   ★ 12 초인 이유
-     로봇이 정상이면 보통 2~3 초 안에 EXPLORING 을 보고한다.
-     너무 짧으면 정상인데도 경고가 뜨고, 너무 길면 갇힌 것처럼 느껴진다. */
+   새 탐험마다 SLAM/Nav2를 다시 준비하므로 준비 시간을 충분히 기다린다. */
 function paintPreparing(){
   const hint = document.getElementById('hint');
   if(!hint || hint.dataset.on) return;      // 이미 띄웠으면 그대로 둔다
 
-  if((Date.now() - preparingSince) / 1000 < 12) return;
+  if((Date.now() - preparingSince) / 1000 < 90) return;
 
   hint.dataset.on = '1';
-  hint.innerHTML = `로봇이 아직 응답하지 않아요.
+  hint.innerHTML = `새 지도 준비가 지연되고 있어요. 로봇 준비 터미널을 확인해 주세요.
     <button class="link" id="cancelBtn">대기 화면으로</button>`;
   document.getElementById('cancelBtn').addEventListener('click', resetMission);
 }

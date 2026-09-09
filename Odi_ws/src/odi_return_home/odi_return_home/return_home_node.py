@@ -25,6 +25,7 @@ from rclpy.time import Time
 from tf2_ros import Buffer, TransformListener
 
 from odi_interfaces.action import ReturnHome
+from odi_interfaces.srv import SetHomePose
 
 
 class ReturnHomeNode(Node):
@@ -77,6 +78,31 @@ class ReturnHomeNode(Node):
         )
 
         self.get_logger().info('Return Home Action Server is running')
+        self.home_service = self.create_service(
+            SetHomePose, '/return_home/set_home_pose', self.set_home_pose,
+            callback_group=self.callback_group)
+
+    def set_home_pose(self, request, response):
+        pose = request.pose
+        p, q = pose.pose.position, pose.pose.orientation
+        values = (p.x, p.y, p.z, q.x, q.y, q.z, q.w)
+        response.success = False
+        if (not request.session_id.strip() or pose.header.frame_id != self.map_frame
+                or not all(math.isfinite(v) for v in values)
+                or abs(sum(v*v for v in values[3:]) - 1.0) > 0.01):
+            response.message = 'Invalid fresh-map home pose'
+            return response
+        with self.goal_lock:
+            if self.goal_reserved:
+                response.message = 'Return home is still active'
+                return response
+            with self.home_lock:
+                self.home_pose = copy.deepcopy(pose)
+                self.home_session_id = request.session_id
+                self.home_capture_timer.cancel()
+        response.success = True
+        response.message = 'Home pose captured for the new map'
+        return response
 
     def _declare_parameters(self) -> None:
         """Declare home-pose, TF, and Nav2 parameters."""

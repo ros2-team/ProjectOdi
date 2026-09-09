@@ -145,7 +145,7 @@ class MissionStateTests(unittest.TestCase):
         bridge.on_mission(NS(state='PREPARING', session_id='new'))
         self.assertEqual(bridge._path, [])
         self.assertEqual(bridge._markers, {})
-        self.assertIs(bridge._map_msg, original_map)
+        self.assertIsNone(bridge._map_msg)
         self.assertFalse(bridge._is_current_detection('old:bag'))
         self.assertTrue(bridge._is_current_detection('new:bag'))
         state.apply_mission_report('RESETTING', 'new')

@@ -12,7 +12,8 @@ from launch.actions import (
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch_ros.actions import Node
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -42,7 +43,7 @@ def generate_launch_description() -> LaunchDescription:
         launch_arguments={
             'use_sim_time': use_sim_time,
         }.items(),
-        condition=IfCondition(use_slam),
+        condition=IfCondition(PythonExpression(["'", use_slam, "' == 'true' and '", use_nav2, "' != 'true'"])),
     )
 
     navigation_launch = IncludeLaunchDescription(
@@ -57,7 +58,7 @@ def generate_launch_description() -> LaunchDescription:
             'use_sim_time': use_sim_time,
             'autostart': 'true',
         }.items(),
-        condition=IfCondition(use_nav2),
+        condition=IfCondition(PythonExpression(["'", use_nav2, "' == 'true' and '", use_slam, "' != 'true'"])),
     )
 
     application_launch = IncludeLaunchDescription(
@@ -116,6 +117,13 @@ def generate_launch_description() -> LaunchDescription:
             value=robot_model,
         ),
         slam_launch,
+        Node(
+            package='odi_bringup', executable='mapping_supervisor',
+            sigterm_timeout='30', sigkill_timeout='10',
+            output='screen', parameters=[{'use_sim_time': use_sim_time}],
+            condition=IfCondition(PythonExpression([
+                "'", use_slam, "' == 'true' and '", use_nav2, "' == 'true'"])),
+        ),
         TimerAction(
             period=3.0,
             actions=[navigation_launch],

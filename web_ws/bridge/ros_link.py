@@ -336,6 +336,7 @@ class OdiBridgeNode(Node):
         if not state.apply_mission_report(msg.state, msg.session_id):
             return
         if msg.session_id != self._session_id:
+            self._map_msg = None
             self._session_id = msg.session_id
             self._path.clear()
             self._markers.clear()

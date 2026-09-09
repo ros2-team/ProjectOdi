@@ -34,6 +34,7 @@ setup(
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
+            'mapping_supervisor = odi_bringup.mapping_supervisor:main',
             'odi_start = odi_bringup.system_control:main_start',
             'odi_robot_start = odi_bringup.system_control:main_robot_start',
             'odi_project_start = odi_bringup.system_control:main_project_start',
