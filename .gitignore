@@ -6,8 +6,12 @@ Odi_ws/build/
 Odi_ws/install/
 Odi_ws/log/
 
+# WEB dump file
+web_ws/static/media/
+
 # 기존 작업 백업
 Odi_ws_backup/
+
 
 # Python
 **/__pycache__/
