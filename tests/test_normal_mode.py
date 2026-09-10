@@ -8,6 +8,7 @@ import threading
 from concurrent.futures import Future
 from types import SimpleNamespace as NS
 import unittest
+from typing import TypedDict, cast
 from unittest.mock import Mock
 from test_session_lifecycle import SRC, ROOT, load_classes, state, commands, HAS_WEB
 import test_fresh_mapping as fresh
@@ -16,6 +17,7 @@ manager = fresh.manager
 sys.path.insert(0, str(SRC/'odi_normal'))
 from odi_normal.attention import Attention, tracking_angles
 normal = load_classes(SRC/'odi_normal/odi_normal/normal_node.py',
+    TypedDict=TypedDict, cast=cast,
     json=json, math=math, uuid=uuid, String=NS, Attention=Attention,
     tracking_angles=tracking_angles, Explore=NS(Goal=NS))
 head = load_classes(SRC/'odi_normal/odi_normal/head_bridge.py',

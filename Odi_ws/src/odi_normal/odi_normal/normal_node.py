@@ -3,6 +3,7 @@ import json
 import math
 import time
 import uuid
+from typing import TypedDict, cast
 
 import rclpy
 from rclpy.node import Node
@@ -16,10 +17,31 @@ from odi_interfaces.action import Explore
 from odi_normal.attention import Attention, tracking_angles
 
 
+class NormalParameters(TypedDict):
+    image_width: int
+    image_height: int
+    target_classes: list[str]
+    confidence: float
+    minimum_area_ratio: float
+    cooldown_sec: float
+    rest_sec: float
+    move_timeout_sec: float
+    track_timeout_sec: float
+    pan_sign: float
+    tilt_sign: float
+    pan_min: float
+    pan_max: float
+    tilt_min: float
+    tilt_max: float
+    pan_home: float
+    tilt_home: float
+    nod_degrees: float
+
+
 class NormalModeNode(Node):
     def __init__(self):
         super().__init__('normal_node')
-        defaults = dict(image_width=320, image_height=240,
+        defaults = NormalParameters(image_width=320, image_height=240,
                         target_classes=['bottle', 'backpack', 'cup'],
                         confidence=0.6, minimum_area_ratio=0.02, cooldown_sec=60.0,
                         rest_sec=8.0, move_timeout_sec=30.0, track_timeout_sec=6.0,
@@ -28,9 +50,19 @@ class NormalModeNode(Node):
                         pan_home=84.0, tilt_home=65.0, nod_degrees=6.0)
         for key, value in defaults.items():
             self.declare_parameter(key, value)
-        self.p = {k:self.get_parameter(k).value for k in defaults}
-        for axis in ('pan', 'tilt'):
-            if not 0 <= self.p[axis+'_min'] <= self.p[axis+'_home'] <= self.p[axis+'_max'] <= 180:
+        values = {k:self.get_parameter(k).value for k in defaults}
+        for key, default in defaults.items():
+            value = values[key]
+            if type(value) is not type(default):
+                raise ValueError(f'Invalid type for parameter {key}')
+            if isinstance(value, list) and not all(isinstance(item, str) for item in value):
+                raise ValueError(f'Parameter {key} must contain strings')
+        # Values have been checked against the typed defaults above.
+        self.p = cast(NormalParameters, values)
+        for lower, home, upper in (
+                (self.p['pan_min'], self.p['pan_home'], self.p['pan_max']),
+                (self.p['tilt_min'], self.p['tilt_home'], self.p['tilt_max'])):
+            if not 0 <= lower <= home <= upper <= 180:
                 raise ValueError('Invalid head limits')
         if self.p['image_width'] <= 0 or self.p['image_height'] <= 0:
             raise ValueError('Image dimensions must be positive')
@@ -127,7 +159,7 @@ class NormalModeNode(Node):
                 self.head.get('session_id') == self.session and
                 self.head.get('ready') is True)
 
-    def set_stage(self, stage, duration=0):
+    def set_stage(self, stage: str, duration: float = 0.0):
         self.stage = stage
         self.deadline = time.monotonic()+duration
         self.get_logger().info('Normal mode: ' + stage)
