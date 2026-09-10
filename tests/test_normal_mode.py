@@ -140,6 +140,23 @@ class NormalTransitionTests(unittest.TestCase):
 
 
 class HeadProtocolTests(unittest.TestCase):
+    def test_lcd_stage_session_and_stale_source(self):
+        n = self.node()
+        now = time.monotonic()
+        n.normal_at = now
+        n.normal_stage = 'REST'
+        self.assertEqual(n.display_face(now), 1)
+        n.on_normal(NS(data=json.dumps(dict(session_id='wrong', stage='NOD_DOWN'))))
+        self.assertEqual(n.normal_stage, 'REST')
+        for stage, face in [('MOVING', 2), ('TRACKING', 3), ('NOD_DOWN', 4), ('STOPPING', 5)]:
+            n.on_normal(NS(data=json.dumps(dict(session_id='one', stage=stage))))
+            self.assertEqual(n.display_face(time.monotonic()), face)
+        self.assertEqual(n.display_face(now+4), 6)
+        n.connection = None
+        n.on_mission(NS(state='NORMAL', session_id='two'))
+        self.assertEqual(n.normal_stage, '')
+        self.assertEqual(n.normal_at, 0.)
+
     def node(self):
         n = head.HeadBridge.__new__(head.HeadBridge)
         n.ready = True

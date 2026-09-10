@@ -1,5 +1,7 @@
 # 일반모드 첫 버전
 
+LCD 설치·표정 명령·실물 테스트는 [LCD 안내](head_lcd.md)를 참고하세요.
+
 현재 동작하는 탐험 빌드는 `assamblybackup` (51e4f73581a840563db26872b93249fa473f61a6)에
 보존했습니다. 일반모드 변경은 `feature/normal_mode`에만 반영합니다.
 `test/assambly`에는 아직 합치지 않습니다.
@@ -49,22 +51,22 @@
 | `/head/command` | JSON: id, session_id, pan, tilt, beep |
 | `/head/state` | ready, session_id, pan, tilt, busy, done |
 
-## 로봇을 확인하기 전
+## 확인된 하드웨어 설정
 
 확인된 Uno 핀 연결은 **PAN_PIN=10(좌우), TILT_PIN=9(상하)**이며 펌웨어에 반영했습니다.
-정면 각도와 회전 범위 확인 전이므로 **ENABLE_SERVOS=false**를 유지합니다.
-이 상태로는 서보가 구동되지 않고 일반모드도 출발하지 않습니다.
+실물에서 확인한 범위는 PAN 40~140(정면 84), TILT 0~100(정면 65)입니다.
+펌웨어는 **ENABLE_SERVOS=true**이며 업로드/재부팅 시 정면으로 이동합니다.
 서보 전원은 별도로 공급하되 Uno와 서보 전원의 GND를 공통으로 연결합니다.
 
-로봇을 확인하면 다음을 맞추세요.
+설치 시 다음을 확인하세요.
 
 1. 반영된 핀 설정(PAN_PIN=10, TILT_PIN=9)과 실제 배선이 일치하는지 확인합니다.
-2. 부저는 아직 없으므로 BUZZER_PIN=-1을 유지합니다.
+2. 수동형 부저는 D8이며 BUZZER_PIN=8로 반영했습니다.
 3. 장착 방향과 기구 간섭을 확인하고 PAN_HOME/TILT_HOME 및 MIN/MAX를 설정합니다.
-   90도는 예시값이며 실제 정면을 보장하지 않습니다.
+   현재 정면은 PAN_HOME=84, TILT_HOME=65입니다.
 4. 물리적으로 제한 범위가 안전함을 확인한 뒤 ENABLE_SERVOS=true로 바꿉니다.
 5. Arduino IDE에서 보드 Arduino Uno와 해당 USB 포트를 선택하고
-   Servo 라이브러리가 설치된 환경에서 업로드합니다.
+   Servo와 hd44780(Bill Perry) 라이브러리를 설치한 뒤 업로드합니다.
 6. 같은 정면·허용 각도를 `Odi_ws/src/odi_bringup/config/odi.yaml`의
    normal_node 설정에도 맞춥니다. 추종이 반대로 움직이면 해당 pan_sign 또는
    tilt_sign을 반전합니다.
@@ -187,4 +189,3 @@ PC용 Servo/Serial 스텁은 실제 하드웨어 피드백을 검증하지 않�
 참고한 공식 API:
 [Arduino Servo](https://docs.arduino.cc/libraries/servo/),
 [ROS2 Humble 액션](https://docs.ros.org/en/humble/Concepts/Basic/About-Actions.html).
-

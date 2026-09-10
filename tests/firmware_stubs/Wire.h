@@ -1,0 +1,7 @@
+#pragma once
+#define WIRE_HAS_TIMEOUT 1
+struct WireFake {
+  void begin() {}
+  void setWireTimeout(unsigned long, bool) {}
+};
+inline WireFake Wire;

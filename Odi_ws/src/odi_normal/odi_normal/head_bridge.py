@@ -27,6 +27,9 @@ class HeadBridge(Node):
         self.session = ''
         self.mission_at = 0.
         self.normal_at = 0.
+        self.normal_stage = ''
+        self.last_face = None
+        self.face_at = 0.
         self.serial_sequence = 0
         self.pending = None
         self.done = ''
@@ -41,6 +44,9 @@ class HeadBridge(Node):
         self.create_timer(.05, self.tick)
 
     def on_mission(self, msg):
+        if msg.session_id != self.session:
+            self.normal_stage = ''
+            self.normal_at = 0.
         if msg.state != self.mission and msg.state not in ('NORMAL', 'NORMAL_STOPPING'):
             if self.connection is not None:
                 try:
@@ -57,10 +63,26 @@ class HeadBridge(Node):
 
     def on_normal(self, msg):
         try:
-            if json.loads(msg.data).get('session_id') == self.session:
+            status = json.loads(msg.data)
+            if status.get('session_id') == self.session:
                 self.normal_at = time.monotonic()
+                self.normal_stage = status.get('stage', '')
         except (ValueError, TypeError, AttributeError):
             pass
+
+    def display_face(self, now):
+        if now-self.mission_at >= 3:
+            return 6
+        if self.mission == 'NORMAL_STOPPING':
+            return 5
+        if self.mission == 'NORMAL':
+            if now-self.normal_at >= 3:
+                return 6
+            return {'REST': 1, 'MOVING': 2, 'BRAKING': 3, 'TRACKING': 3,
+                    'NOD_DOWN': 4, 'NOD_UP': 4, 'STOPPING': 5}.get(self.normal_stage, 0)
+        if self.mission == 'ERROR':
+            return 6
+        return 0 if self.mission in ('', 'IDLE') else 7
 
     def command(self, msg):
         try:
@@ -91,6 +113,7 @@ class HeadBridge(Node):
     def line(self, text):
         parts = text.split()
         if text == 'BOOT':
+            self.last_face = None
             self.ready = False
             self.done = ''
             self.pending = None
@@ -117,6 +140,7 @@ class HeadBridge(Node):
                 self.done = ''
                 self.pending = None
                 self.recent.clear()
+                self.last_face = None
             if self.connection is not None:
                 # Do not keep the Uno watchdog alive after the mission source disappears.
                 alive = (self.mission not in ('NORMAL', 'NORMAL_STOPPING') or now-self.normal_at < 3)
@@ -132,6 +156,10 @@ class HeadBridge(Node):
                         self.line(line.decode('ascii').strip())
                     except (UnicodeError, ValueError):
                         pass
+                face = self.display_face(now)
+                if face != self.last_face or now-self.face_at >= 1:
+                    self.write(f'L {face}')
+                    self.last_face, self.face_at = face, now
         except (serial.SerialException, OSError) as error:
             self.get_logger().warning('Uno unavailable: '+str(error))
             if self.connection:
