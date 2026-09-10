@@ -8,12 +8,12 @@
 #include <stdio.h>
 #include <string.h>
 
-const bool ENABLE_SERVOS = false;
+const bool ENABLE_SERVOS = true;
 const int PAN_PIN = 10;       // Left/right (pan): confirmed Uno pin.
 const int TILT_PIN = 9;       // Up/down (tilt): confirmed Uno pin.
 const int BUZZER_PIN = -1;    // Optional; -1 disables sound.
-const int PAN_MIN = 60, PAN_MAX = 120, PAN_HOME = 90;
-const int TILT_MIN = 70, TILT_MAX = 110, TILT_HOME = 90;
+const int PAN_MIN = 40, PAN_MAX = 140, PAN_HOME = 84;
+const int TILT_MIN = 0, TILT_MAX = 100, TILT_HOME = 65;
 Servo panServo, tiltServo;
 bool enabled = false, active = false;
 int panAngle = PAN_HOME, tiltAngle = TILT_HOME;
