@@ -48,7 +48,7 @@ yolo_node:
     minimum_box_area_ratio: 0.025
     minimum_detection_frames: 3
     reobserve_cooldown_sec: 60.0
-    excluded_classes: ['tv', 'laptop']
+    excluded_classes: ["tv", "laptop"]
     maximum_observation_distance: 2.0
     camera_info_topic: /camera/camera_info
     device: cpu
@@ -66,10 +66,10 @@ normal_node:
     # Calibrate signs, neutral positions and limits on the actual mount.
     pan_sign: -1.0
     tilt_sign: 1.0
-    pan_home: 90.0
-    tilt_home: 90.0
-    pan_min: 60.0
-    pan_max: 120.0
-    tilt_min: 70.0
-    tilt_max: 110.0
+    pan_home: 84.0
+    tilt_home: 65.0
+    pan_min: 40.0
+    pan_max: 140.0
+    tilt_min: 0.0
+    tilt_max: 100.0
     nod_degrees: 6.0
