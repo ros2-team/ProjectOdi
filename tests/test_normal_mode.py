@@ -179,6 +179,86 @@ class HeadProtocolTests(unittest.TestCase):
         self.assertFalse(n.ready)
 
 
+class HeadFaceTests(unittest.TestCase):
+    def node(self, mission='NORMAL', stage='REST'):
+        n = head.HeadBridge.__new__(head.HeadBridge)
+        n.mission, n.stage, n.session = mission, stage, 'one'
+        n.face, n.face_at = None, 0.
+        n.pending = None
+        return n
+
+    def ticking(self, mission='NORMAL', stage='REST'):
+        n = self.node(mission, stage)
+        n.enabled = True
+        n.connection = Mock(in_waiting=0, **{'read.return_value': b''})
+        n.buffer = b''
+        n.next_connect = 0.
+        n.ready = True
+        n.pan = n.tilt = 90
+        n.busy = False
+        n.done = ''
+        n.publisher = Mock()
+        n.write = Mock()
+        # A fresh ping keeps 'P' out of the way so writes are faces only.
+        n.last_ping = n.last_rx = n.mission_at = n.normal_at = time.monotonic()
+        return n
+
+    def test_stage_drives_the_face_inside_normal_mode(self):
+        n = self.node()
+        for stage, face in (('REST', n.FACE_NEUTRAL), ('HOMING', n.FACE_NEUTRAL),
+                            ('MOVING', n.FACE_DRIVE), ('TRACKING', n.FACE_CURIOUS),
+                            ('BRAKING', n.FACE_CURIOUS), ('NOD_UP', n.FACE_HAPPY),
+                            ('STOPPING', n.FACE_TIRED)):
+            n.stage = stage
+            self.assertEqual(n.face_for(), face)
+        n.stage = 'A_STAGE_ADDED_LATER'  # An unknown stage must not blank the head.
+        self.assertEqual(n.face_for(), n.FACE_NEUTRAL)
+
+    def test_mission_drives_the_face_outside_normal_mode(self):
+        n = self.node(mission='EXPLORING', stage='TRACKING')
+        self.assertEqual(n.face_for(), n.FACE_DRIVE)  # A stale stage cannot leak.
+        for mission, face in (('ERROR', n.FACE_ERROR), ('IDLE', n.FACE_SLEEP),
+                              ('PREPARING', n.FACE_THINK), ('RETURNING', n.FACE_TIRED),
+                              ('NORMAL_STOPPING', n.FACE_TIRED), ('', n.FACE_SLEEP)):
+            n.mission = mission
+            self.assertEqual(n.face_for(), face)
+
+    def test_stage_from_another_session_is_ignored(self):
+        n = self.node(stage='')
+        n.normal_at = 0.
+        n.on_normal(NS(data=json.dumps(dict(session_id='other', stage='TRACKING'))))
+        self.assertEqual(n.stage, '')
+        n.on_normal(NS(data=json.dumps(dict(session_id='one', stage='TRACKING'))))
+        self.assertEqual(n.stage, 'TRACKING')
+
+    def test_face_is_sent_on_change_reset_and_heartbeat_only(self):
+        n = self.ticking()
+        n.tick()
+        n.write.assert_called_once_with('F 1')
+        n.tick()
+        n.write.assert_called_once_with('F 1')  # Unchanged: no repeated traffic.
+        n.stage = 'TRACKING'
+        n.tick()
+        self.assertEqual(n.write.call_args[0][0], 'F 3')
+        n.line('BOOT')  # A reset Uno lost the glass; repaint without a change.
+        n.write.reset_mock()
+        n.tick()
+        n.write.assert_called_once_with('F 3')
+        n.write.reset_mock()
+        n.face_at = time.monotonic()-3
+        n.tick()
+        n.write.assert_called_once_with('F 3')
+
+    def test_face_stops_when_the_mission_heartbeat_dies(self):
+        n = self.ticking()
+        n.tick()
+        n.write.reset_mock()
+        n.stage = 'MOVING'
+        n.mission_at = time.monotonic()-5
+        n.tick()
+        n.write.assert_not_called()  # No lines, so the Uno sleeps the face itself.
+
+
 class StrictNavigationTests(unittest.TestCase):
     def test_late_nav2_acceptance_waits_for_terminal_not_cancel_ack(self):
         n = navigation.NavigationManager.__new__(navigation.NavigationManager)

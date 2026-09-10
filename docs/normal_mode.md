@@ -34,7 +34,7 @@
 - 메인 PC: 기존 `odi_exploration`의 `SHORT_ROAM` — 가까운 목표 한 곳으로 이동.
 - Raspberry Pi: `odi_normal/head_bridge` — ROS와 Uno USB 시리얼 연결.
 - Uno: `firmware/odi_head/odi_head.ino` — 제한된 각도로 서서히 이동, 완료 응답,
-  2초 통신 watchdog, 선택적 부저.
+  2초 통신 watchdog, 부저, I2C 16x2 LCD 표정.
 - 웹: 일반모드 시작/종료 버튼, 행동 상태와 카메라 영상.
 
 기존 perception/tracker 테스트 브랜치는 수정하지 않습니다.
@@ -49,17 +49,41 @@
 | `/head/command` | JSON: id, session_id, pan, tilt, beep |
 | `/head/state` | ready, session_id, pan, tilt, busy, done |
 
+Uno 시리얼(115200)은 다음과 같습니다.
+
+| 명령 | 방향 | 내용 |
+|---|---|---|
+| `P` | → Uno | 하트비트. `S enabled pan tilt busy`로 응답 |
+| `M seq pan tilt beep` | → Uno | 이동. 완료 후 `D seq` |
+| `H` | → Uno | 즉시 정면 복귀 |
+| `F code` | → Uno | 표정 0~7. 응답 없음 |
+| `E invalid` | Uno → | 거부된 명령 |
+| `BOOT` | Uno → | 리셋됨. 호스트는 표정을 다시 보냄 |
+
+표정은 `head_bridge`가 `/mission/state`와 `/normal/status`의 stage에서 계산해
+바뀔 때만 보냅니다. 코드는 0 SLEEP, 1 NEUTRAL, 2 DRIVE, 3 CURIOUS, 4 HAPPY,
+5 TIRED, 6 ERROR, 7 THINK이며 `.ino`의 enum과 짝을 맞춰야 합니다.
+`F`는 서보 watchdog을 갱신하지 않습니다. 제어 노드가 죽으면 표정과 무관하게
+2초 뒤 머리가 정면으로 돌아가야 하기 때문입니다.
+
 ## 로봇을 확인하기 전
 
 확인된 Uno 핀 연결은 **PAN_PIN=10(좌우), TILT_PIN=9(상하)**이며 펌웨어에 반영했습니다.
+부저는 **디지털 8번(수동 부저)**, LCD는 **A4(SDA)/A5(SCL)** 입니다.
 정면 각도와 회전 범위 확인 전이므로 **ENABLE_SERVOS=false**를 유지합니다.
 이 상태로는 서보가 구동되지 않고 일반모드도 출발하지 않습니다.
+LCD 표정은 서보와 무관하므로 이 상태에서도 확인할 수 있습니다.
 서보 전원은 별도로 공급하되 Uno와 서보 전원의 GND를 공통으로 연결합니다.
+
+LCD는 없으면 없는 대로 동작합니다. `setup()`이 I2C 주소에 응답이 있는지 확인해
+없으면 이후 LCD 작업을 전부 건너뜁니다. **LCD를 붙이기 전에 Arduino IDE의
+I2C 스캐너 예제로 백팩 주소를 읽고 `LCD_ADDR`을 맞추세요.** 흔한 값은 0x27과 0x3F입니다.
+글자가 깨지면 `Wire.setClock(400000)`을 `100000`으로 낮춥니다.
 
 로봇을 확인하면 다음을 맞추세요.
 
-1. 반영된 핀 설정(PAN_PIN=10, TILT_PIN=9)과 실제 배선이 일치하는지 확인합니다.
-2. 부저는 아직 없으므로 BUZZER_PIN=-1을 유지합니다.
+1. 반영된 핀 설정(PAN_PIN=10, TILT_PIN=9, BUZZER_PIN=8)과 실제 배선이
+   일치하는지 확인합니다. 부저를 A4/A5에 꽂으면 I2C와 충돌하며 펌웨어가 거부합니다.
 3. 장착 방향과 기구 간섭을 확인하고 PAN_HOME/TILT_HOME 및 MIN/MAX를 설정합니다.
    90도는 예시값이며 실제 정면을 보장하지 않습니다.
 4. 물리적으로 제한 범위가 안전함을 확인한 뒤 ENABLE_SERVOS=true로 바꿉니다.
@@ -180,9 +204,11 @@ node --check web_ws/static/js/exploring.js
 ```
 
 HTTP 테스트에는 Flask, flask-sock, PyMySQL이 필요합니다.
-검증 당시 Python 테스트 61개 통과, 실제 스케치 로직을 포함한 C++ 호스트 테스트 통과.
+검증 당시 Python 테스트 66개 통과, 실제 스케치 로직을 포함한 C++ 호스트 테스트 통과.
 ROS2 Humble 빌드, AVR 툴체인 컴파일, 전기적 연결, 실물 서보 동작은 아직 검증하지 않았습니다.
-PC용 Servo/Serial 스텁은 실제 하드웨어 피드백을 검증하지 않습니다.
+PC용 Servo/Serial/Wire/LCD 스텁은 실제 하드웨어 피드백을 검증하지 않습니다.
+특히 LCD 스텁은 I2C 타이밍을 재현하지 않으므로, LCD 갱신이 서보 움직임을
+끊지 않는지는 실물에서 확인해야 합니다.
 
 참고한 공식 API:
 [Arduino Servo](https://docs.arduino.cc/libraries/servo/),

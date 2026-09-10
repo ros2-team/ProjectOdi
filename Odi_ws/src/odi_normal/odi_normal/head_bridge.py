@@ -12,6 +12,21 @@ from odi_interfaces.msg import MissionState
 
 
 class HeadBridge(Node):
+    # Face codes must match the enum in firmware/odi_head/odi_head.ino.
+    FACE_SLEEP, FACE_NEUTRAL, FACE_DRIVE, FACE_CURIOUS = 0, 1, 2, 3
+    FACE_HAPPY, FACE_TIRED, FACE_ERROR, FACE_THINK = 4, 5, 6, 7
+    STAGE_FACES = {'WAIT_HEAD': FACE_NEUTRAL, 'HOMING': FACE_NEUTRAL,
+                   'RETURN_HEAD': FACE_NEUTRAL, 'REST': FACE_NEUTRAL,
+                   'MOVING': FACE_DRIVE,
+                   'BRAKING': FACE_CURIOUS, 'TRACKING': FACE_CURIOUS,
+                   'NOD_DOWN': FACE_HAPPY, 'NOD_UP': FACE_HAPPY,
+                   'STOPPING': FACE_TIRED}
+    MISSION_FACES = {'IDLE': FACE_SLEEP, 'EXPLORING': FACE_DRIVE,
+                     'PREPARING': FACE_THINK, 'REFLECTING': FACE_THINK,
+                     'RESETTING': FACE_THINK, 'COMPLETED': FACE_HAPPY,
+                     'RETURNING': FACE_TIRED, 'NORMAL_STOPPING': FACE_TIRED,
+                     'ERROR': FACE_ERROR}
+
     def __init__(self):
         super().__init__('head_bridge')
         self.declare_parameter('enabled', False)
@@ -25,6 +40,9 @@ class HeadBridge(Node):
         self.last_rx = 0.
         self.mission = ''
         self.session = ''
+        self.stage = ''
+        self.face = None
+        self.face_at = 0.
         self.mission_at = 0.
         self.normal_at = 0.
         self.serial_sequence = 0
@@ -57,10 +75,18 @@ class HeadBridge(Node):
 
     def on_normal(self, msg):
         try:
-            if json.loads(msg.data).get('session_id') == self.session:
+            status = json.loads(msg.data)
+            if status.get('session_id') == self.session:
                 self.normal_at = time.monotonic()
+                self.stage = status.get('stage') or ''
         except (ValueError, TypeError, AttributeError):
             pass
+
+    def face_for(self):
+        """Expression for the current driving state; the stage wins in normal mode."""
+        if self.mission == 'NORMAL':
+            return self.STAGE_FACES.get(self.stage, self.FACE_NEUTRAL)
+        return self.MISSION_FACES.get(self.mission, self.FACE_SLEEP)
 
     def command(self, msg):
         try:
@@ -94,6 +120,7 @@ class HeadBridge(Node):
             self.ready = False
             self.done = ''
             self.pending = None
+            self.face = None  # A reset Uno lost its CGRAM and its glass.
         if len(parts) == 5 and parts[0] == 'S':
             self.ready = parts[1] == '1'
             self.pan, self.tilt = int(parts[2]), int(parts[3])
@@ -116,6 +143,7 @@ class HeadBridge(Node):
                 self.ready = False
                 self.done = ''
                 self.pending = None
+                self.face = None
                 self.recent.clear()
             if self.connection is not None:
                 # Do not keep the Uno watchdog alive after the mission source disappears.
@@ -123,6 +151,13 @@ class HeadBridge(Node):
                 if now-self.last_ping >= .4 and now-self.mission_at < 3 and alive:
                     self.write('P')
                     self.last_ping = now
+                # Faces are not gated on NORMAL: exploration gets one too. They
+                # stop with the mission heartbeat so a dead stack sleeps the face.
+                if now-self.mission_at < 3:
+                    face = self.face_for()
+                    if face != self.face or now-self.face_at > 2:
+                        self.write(f'F {face}')
+                        self.face, self.face_at = face, now
                 self.buffer += self.connection.read(min(4096, self.connection.in_waiting))
                 if len(self.buffer) > 4096:
                     self.buffer = b''
