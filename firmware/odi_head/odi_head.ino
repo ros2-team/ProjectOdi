@@ -25,8 +25,9 @@ int panAngle = PAN_HOME, tiltAngle = TILT_HOME;
 int targetPan = PAN_HOME, targetTilt = TILT_HOME;
 unsigned long sequence = 0, lastContact = 0, lastStep = 0, settledAt = 0;
 // Short pitch sweeps with pauses: one phrase lasts about 350 ms.
-const uint16_t TALK_START[] = {1100, 0, 2300, 0, 1900};
-const uint16_t TALK_END[] = {1900, 0, 2600, 0, 1000};
+// Lower pitch and narrow sweeps; tone() does not control electrical amplitude.
+const uint16_t TALK_START[] = {550, 0, 750, 0, 650};
+const uint16_t TALK_END[] = {650, 0, 800, 0, 500};
 const uint16_t TALK_TIME[] = {90, 45, 65, 40, 110};
 const byte TALK_STEPS = 5;
 byte talkStep = 0, talksLeft = 0, talkVariant = 0;
@@ -64,8 +65,8 @@ void updateTalk() {
   talkUpdated = now;
   int from = TALK_START[talkStep], to = TALK_END[talkStep];
   if (from == 0) { noTone(BUZZER_PIN); return; }
-  long frequency = from + (talkVariant % 2) * 180
-      + (long)(to - from) * elapsed / TALK_TIME[talkStep];
+  long frequency = from + (talkVariant % 2) * 40
+      + (long)(to - from) * (long)elapsed / TALK_TIME[talkStep];
   tone(BUZZER_PIN, (unsigned int)frequency);
 }
 char input[80];
@@ -79,12 +80,12 @@ bool lcdReady = false;
 enum {EYE_OPEN, EYE_CLOSED, EYE_HAPPY, EYE_WIDE, EYE_X, EYE_HALF,
       MOUTH_LEFT, MOUTH_RIGHT};
 const byte GLYPHS[8][8] PROGMEM = {
-  {0x00, 0x0E, 0x1B, 0x19, 0x1F, 0x0E, 0x00, 0x00},  // EYE_OPEN: glint
-  {0x00, 0x00, 0x00, 0x11, 0x0E, 0x00, 0x00, 0x00},  // EYE_CLOSED
+  {0x00, 0x0E, 0x1F, 0x1F, 0x1F, 0x0E, 0x00, 0x00},  // EYE_OPEN
+  {0x00, 0x00, 0x00, 0x1F, 0x1F, 0x00, 0x00, 0x00},  // EYE_CLOSED
   {0x00, 0x00, 0x0E, 0x11, 0x11, 0x00, 0x00, 0x00},  // EYE_HAPPY
-  {0x00, 0x0E, 0x11, 0x15, 0x15, 0x11, 0x0E, 0x00},  // EYE_WIDE
+  {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E, 0x00},  // EYE_WIDE
   {0x00, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x00, 0x00},  // EYE_X
-  {0x00, 0x00, 0x1F, 0x11, 0x0E, 0x00, 0x00, 0x00},  // EYE_HALF
+  {0x00, 0x00, 0x1F, 0x1F, 0x0E, 0x00, 0x00, 0x00},  // EYE_HALF
   {0x00, 0x00, 0x00, 0x10, 0x10, 0x08, 0x07, 0x00},  // MOUTH_LEFT
   {0x00, 0x00, 0x00, 0x01, 0x01, 0x02, 0x1C, 0x00},  // MOUTH_RIGHT
 };
@@ -94,8 +95,8 @@ enum {FACE_READY, FACE_REST, FACE_WALK, FACE_CURIOUS, FACE_HAPPY,
       FACE_STOPPING, FACE_ERROR, FACE_EXPLORE, FACE_SLEEP, FACE_THINK, FACE_COUNT};
 // Preserve L 0..7 meanings; append sleep and thinking at 8 and 9.
 const byte FACES[FACE_COUNT][3] PROGMEM = {
-  {EYE_OPEN, MOUTH_LEFT, MOUTH_RIGHT}, {EYE_HALF, MOUTH_LEFT, MOUTH_RIGHT},
-  {EYE_OPEN, MOUTH_LEFT, MOUTH_RIGHT}, {EYE_WIDE, 'o', 'o'},
+  {EYE_OPEN, '_', '_'}, {EYE_HALF, '_', '_'},
+  {EYE_OPEN, MOUTH_LEFT, MOUTH_RIGHT}, {EYE_WIDE, 'O', ' '},
   {EYE_HAPPY, MOUTH_LEFT, MOUTH_RIGHT}, {EYE_HALF, '_', '_'},
   {EYE_X, '/', '\\'}, {EYE_OPEN, MOUTH_LEFT, MOUTH_RIGHT},
   {EYE_CLOSED, '_', '_'}, {EYE_OPEN, '.', '.'}
@@ -105,13 +106,9 @@ byte faceRow = 2;
 unsigned long faceAt = 0, lastFaceStep = 0;
 
 void drawFace() {
-  static bool previousBlink = false;
   if (!lcdReady) return;
-  bool canBlink = face == FACE_READY || face == FACE_WALK ||
-      face == FACE_CURIOUS || face == FACE_EXPLORE || face == FACE_THINK;
-  bool blink = canBlink && millis() % 2800UL >= 2620UL;
-  if (drawingFace != face || blink != previousBlink) {
-    drawingFace = face; previousBlink = blink; faceRow = 0;
+  if (drawingFace != face) {
+    drawingFace = face; faceRow = 0;
   }
   if (faceRow >= 2 || millis()-lastFaceStep < 20) return;
   lastFaceStep = millis();
@@ -122,7 +119,7 @@ void drawFace() {
   for (byte col = 0; col < 16; ++col) {
     byte cell = ' ';
     if (faceRow == 0 && (col == 5 || col == 10))
-      cell = blink ? (byte)EYE_CLOSED : pgm_read_byte(&FACES[face][0]);
+      cell = pgm_read_byte(&FACES[face][0]);
     else if (faceRow == 1 && (col == 7 || col == 8))
       cell = pgm_read_byte(&FACES[face][col-6]);
     else if (faceRow == 1 && face == FACE_HAPPY && (col == 4 || col == 11))

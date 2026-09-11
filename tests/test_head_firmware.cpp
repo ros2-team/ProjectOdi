@@ -44,9 +44,12 @@ int main() {
   fakeTime+=3100; loop();
   assert(face==6 && lcd.rows[0][5]==EYE_X);
   fakeTime=8220; Serial.incoming="L 0\n"; loop();
-  assert(lcd.rows[0][5]==EYE_CLOSED); // 2620ms into blink cycle.
+  assert(lcd.rows[0][5]==EYE_OPEN); // No timed blinking.
   fakeTime=8400; loop();
   assert(lcd.rows[0][5]==EYE_OPEN);
+  fakeTime+=20; Serial.incoming="L 3\n"; loop();
+  fakeTime+=20; loop();
+  assert(lcd.rows[1]=="       O        "); // Single uppercase mouth.
   lcd.fail=true;
   fakeTime+=20; Serial.incoming="L 0\n"; loop();
   assert(!lcdReady);
@@ -59,6 +62,7 @@ int main() {
   assert(!talking && !toneActive && panAngle==90);
   bool rises=false, falls=false;
   for (size_t i=1; i<toneFrequencies.size(); ++i) {
+    assert(toneFrequencies[i]>=500 && toneFrequencies[i]<=840);
     rises |= toneFrequencies[i]>toneFrequencies[i-1];
     falls |= toneFrequencies[i]<toneFrequencies[i-1];
   }
