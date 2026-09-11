@@ -4,6 +4,7 @@
 // M sequence pan tilt beepCount -> D sequence after commanded motion + settle.
 // D is commanded completion, NOT encoder feedback (ordinary servos have none).
 #include <Servo.h>
+#include <avr/pgmspace.h>
 #include <Wire.h>
 #include <hd44780.h>
 #include <hd44780ioClass/hd44780_I2Cexp.h>
@@ -32,29 +33,55 @@ bool overflowed = false;
 // Uno SDA=A4 (18), SCL=A5 (19). Library auto-detects backpack pin mapping.
 hd44780_I2Cexp lcd(0x27);
 bool lcdReady = false;
-int face = 0, drawnFace = -1;
-unsigned long faceAt = 0;
-const char* const faces[] = {"    ( ^_^ )", "    ( -_- )", "    ( o_o )",
-  "    ( O_O )", "    ( ^o^ )", "    ( ._. )", "    ( x_x )", "    ( o_o )"};
-const char* const labels[] = {"ODI READY", "RESTING", "WALKING", "LOOKING AT YOU",
-  "HELLO! BEEP BEEP", "STOPPING", "LINK LOST", "EXPLORING"};
+// Glyph artwork adapted from feature/head_lcd (5936aa9).
+enum {EYE_OPEN, EYE_CLOSED, EYE_HAPPY, EYE_WIDE, EYE_X, EYE_HALF,
+      MOUTH_LEFT, MOUTH_RIGHT};
+const byte GLYPHS[8][8] PROGMEM = {
+  {0x00, 0x0E, 0x1F, 0x1F, 0x1F, 0x0E, 0x00, 0x00},  // EYE_OPEN
+  {0x00, 0x00, 0x00, 0x1F, 0x1F, 0x00, 0x00, 0x00},  // EYE_CLOSED
+  {0x00, 0x00, 0x04, 0x0E, 0x1B, 0x00, 0x00, 0x00},  // EYE_HAPPY
+  {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E, 0x00},  // EYE_WIDE
+  {0x00, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x00, 0x00},  // EYE_X
+  {0x00, 0x00, 0x1F, 0x1F, 0x0E, 0x00, 0x00, 0x00},  // EYE_HALF
+  {0x00, 0x00, 0x00, 0x00, 0x10, 0x08, 0x07, 0x00},  // MOUTH_LEFT
+  {0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x1C, 0x00},  // MOUTH_RIGHT
+};
+
+
+enum {FACE_READY, FACE_REST, FACE_WALK, FACE_CURIOUS, FACE_HAPPY,
+      FACE_STOPPING, FACE_ERROR, FACE_EXPLORE, FACE_SLEEP, FACE_THINK, FACE_COUNT};
+// Preserve L 0..7 meanings; append sleep and thinking at 8 and 9.
+const byte FACES[FACE_COUNT][3] PROGMEM = {
+  {EYE_OPEN, '_', '_'}, {EYE_HALF, '_', '_'},
+  {EYE_OPEN, MOUTH_LEFT, MOUTH_RIGHT}, {EYE_WIDE, 'o', 'o'},
+  {EYE_HAPPY, MOUTH_LEFT, MOUTH_RIGHT}, {EYE_HALF, '_', '_'},
+  {EYE_X, '/', '\\'}, {EYE_OPEN, MOUTH_LEFT, MOUTH_RIGHT},
+  {EYE_CLOSED, '_', '_'}, {EYE_OPEN, '.', '.'}
+};
+int face = FACE_READY, drawingFace = -1;
+byte faceRow = 2;
+unsigned long faceAt = 0, lastFaceStep = 0;
 
 void drawFace() {
-  if (!lcdReady || drawnFace == face) return;
-  // Pad each row instead of clear() to avoid flashing the whole screen.
-  for (byte row = 0; row < 2; ++row) {
-    const char* text = row == 0 ? faces[face] : labels[face];
-    if (lcd.setCursor(0, row) != 0) {
+  if (!lcdReady) return;
+  if (drawingFace != face) { drawingFace = face; faceRow = 0; }
+  if (faceRow >= 2 || millis()-lastFaceStep < 20) return;
+  lastFaceStep = millis();
+  // Only one row per tick, after servo servicing, at standard 100 kHz.
+  if (lcd.setCursor(0, faceRow) != 0) {
+    lcdReady = false; Serial.println("E lcd_io"); return;
+  }
+  for (byte col = 0; col < 16; ++col) {
+    byte cell = ' ';
+    if (faceRow == 0 && (col == 4 || col == 11))
+      cell = pgm_read_byte(&FACES[face][0]);
+    else if (faceRow == 1 && (col == 7 || col == 8))
+      cell = pgm_read_byte(&FACES[face][col-6]);
+    if (lcd.write(cell) != 1) {
       lcdReady = false; Serial.println("E lcd_io"); return;
     }
-    byte length = strlen(text);
-    for (byte col = 0; col < 16; ++col) {
-      if (lcd.write(col < length ? text[col] : ' ') != 1) {
-        lcdReady = false; Serial.println("E lcd_io"); return;
-      }
-    }
   }
-  drawnFace = face;
+  ++faceRow;
 }
 
 void state() {
@@ -72,7 +99,7 @@ void home() {
 void command() {
   if (input[0] == 'L') {
     int requested; char tail;
-    if (sscanf(input, "L %d %c", &requested, &tail) != 1 || requested < 0 || requested > 7) {
+    if (sscanf(input, "L %d %c", &requested, &tail) != 1 || requested < 0 || requested >= FACE_COUNT) {
       Serial.println("E lcd_invalid"); return;
     }
     face = requested; faceAt = millis();
@@ -100,11 +127,18 @@ void setup() {
   Serial.begin(115200);
   Serial.println("BOOT");
   Wire.begin();
+  Wire.setClock(100000);
   // Arduino AVR Boards 1.8.6: bound I2C bus faults as well as normal writes.
   Wire.setWireTimeout(3000, true);
   lcdReady = lcd.begin(16, 2) == 0;
   if (!lcdReady) Serial.println("E lcd_init");
-  drawFace();
+  for (byte glyph = 0; lcdReady && glyph < 8; ++glyph) {
+    byte bitmap[8];
+    for (byte row = 0; row < 8; ++row) bitmap[row] = pgm_read_byte(&GLYPHS[glyph][row]);
+    if (lcd.createChar(glyph, bitmap) != 0) {
+      lcdReady = false; Serial.println("E lcd_glyph");
+    }
+  }
   enabled = ENABLE_SERVOS && PAN_PIN >= 2 && PAN_PIN <= 19 &&
     TILT_PIN >= 2 && TILT_PIN <= 17 && PAN_PIN <= 17 && PAN_PIN != TILT_PIN &&
     PAN_MIN <= PAN_HOME && PAN_HOME <= PAN_MAX &&
@@ -131,7 +165,6 @@ void loop() {
   }
   unsigned long now = millis();
   if (now-faceAt > 3000) face = 6;
-  drawFace();
   if (enabled && now-lastContact > 2000 &&
       (sequence != 0 || targetPan != PAN_HOME || targetTilt != TILT_HOME)) home();
   if (enabled && now-lastStep >= 20) {
@@ -150,6 +183,7 @@ void loop() {
       }
     }
   }
+  drawFace();
   if (BUZZER_PIN >= 0 && now-beepAt >= 130) {
     beepAt = now;
     if (sounding) { noTone(BUZZER_PIN); sounding = false; }

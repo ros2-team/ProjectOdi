@@ -7,6 +7,7 @@ SerialFake Serial;
 int main() {
   setup();
   assert(enabled);
+  assert(lcd.glyphs==8);
   enabled=false;
   Serial.incoming="M 1 90 100 0\n"; loop();
   assert(Serial.output.find("E invalid") != std::string::npos);
@@ -23,21 +24,26 @@ int main() {
   Serial.incoming=std::string(120,'x')+"M 4 90 100 0\n"; loop();
   assert(targetTilt==TILT_HOME); // Overflow line cannot execute a suffix command.
   Serial.incoming="L 4\n"; loop();
-  assert(lcd.rows[1]=="HELLO! BEEP BEEP");
+  assert(lcd.rows[0][4]==EYE_HAPPY && lcd.rows[0][11]==EYE_HAPPY);
+  int firstRowWrites=lcd.writes;
+  fakeTime+=20; loop();
+  assert(lcd.writes-firstRowWrites==16);
+  assert(lcd.rows[1][7]==MOUTH_LEFT && lcd.rows[1][8]==MOUTH_RIGHT);
   int writes=lcd.writes;
   Serial.incoming="L 4\n"; loop();
   assert(lcd.writes==writes); // Same face does not flash/rewrite LCD.
-  Serial.incoming="L 1\n"; loop();
-  assert(lcd.rows[1]=="RESTING         "); // Old text removed.
-  Serial.incoming="L 8\n"; loop();
+  fakeTime+=20; Serial.incoming="L 1\n"; loop();
+  fakeTime+=20; loop();
+  assert(lcd.rows[1]=="       __       "); // Old mouth removed.
+  Serial.incoming="L 10\n"; loop();
   assert(face==1);
   unsigned long contact=lastContact;
   Serial.incoming="L 3\n"; loop();
   assert(lastContact==contact); // LCD must not refresh motion lease.
   fakeTime+=3100; loop();
-  assert(face==6 && lcd.rows[1]=="LINK LOST       ");
+  assert(face==6 && lcd.rows[0][4]==EYE_X);
   lcd.fail=true;
-  Serial.incoming="L 0\n"; loop();
+  fakeTime+=20; Serial.incoming="L 0\n"; loop();
   assert(!lcdReady);
   Serial.incoming="M 9 84 65 2\n"; loop();
   assert(sequence==9 && beeps==2); // Missing LCD cannot disable servos/buzzer.

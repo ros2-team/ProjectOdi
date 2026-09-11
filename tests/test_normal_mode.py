@@ -142,6 +142,19 @@ class NormalTransitionTests(unittest.TestCase):
 
 
 class HeadProtocolTests(unittest.TestCase):
+    def test_exploration_faces_and_stale_normal_heartbeat(self):
+        n = self.node()
+        now = time.monotonic()
+        for mission, face in [('IDLE', 8), ('PREPARING', 9), ('RESETTING', 9),
+                              ('EXPLORING', 7), ('RETURNING', 5), ('REFLECTING', 9),
+                              ('COMPLETED', 4), ('ERROR', 6)]:
+            n.mission = mission
+            self.assertEqual(n.display_face(now), face)
+        n.mission = 'NORMAL'
+        n.normal_at = now-4
+        n.normal_stage = 'NOD_DOWN'
+        self.assertEqual(n.display_face(now), 6)
+
     def test_lcd_stage_session_and_stale_source(self):
         n = self.node()
         now = time.monotonic()

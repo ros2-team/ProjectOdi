@@ -82,7 +82,9 @@ class HeadBridge(Node):
                     'NOD_DOWN': 4, 'NOD_UP': 4, 'STOPPING': 5}.get(self.normal_stage, 0)
         if self.mission == 'ERROR':
             return 6
-        return 0 if self.mission in ('', 'IDLE') else 7
+        return {'': 0, 'IDLE': 8, 'PREPARING': 9, 'RESETTING': 9,
+                'EXPLORING': 7, 'RETURNING': 5, 'REFLECTING': 9,
+                'COMPLETED': 4}.get(self.mission, 0)
 
     def command(self, msg):
         try:
