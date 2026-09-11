@@ -2,6 +2,7 @@
 // Pins and motion limits calibrated on Odi; upload moves the head to 84/65.
 // Protocol at 115200: P -> S enabled pan tilt busy
 // M sequence pan tilt beepCount -> D sequence after commanded motion + settle.
+// beepCount 1..3 now plays that many pitch-swept phrases; 0 starts no new sound.
 // D is commanded completion, NOT encoder feedback (ordinary servos have none).
 #include <Servo.h>
 #include <avr/pgmspace.h>
@@ -23,9 +24,50 @@ bool enabled = false, active = false;
 int panAngle = PAN_HOME, tiltAngle = TILT_HOME;
 int targetPan = PAN_HOME, targetTilt = TILT_HOME;
 unsigned long sequence = 0, lastContact = 0, lastStep = 0, settledAt = 0;
-unsigned long beepAt = 0;
-int beeps = 0;
-bool sounding = false;
+// Short pitch sweeps with pauses: one phrase lasts about 350 ms.
+const uint16_t TALK_START[] = {1100, 0, 2300, 0, 1900};
+const uint16_t TALK_END[] = {1900, 0, 2600, 0, 1000};
+const uint16_t TALK_TIME[] = {90, 45, 65, 40, 110};
+const byte TALK_STEPS = 5;
+byte talkStep = 0, talksLeft = 0, talkVariant = 0;
+bool talking = false;
+unsigned long talkStarted = 0, talkUpdated = 0;
+
+void stopTalk() {
+  talking = false; talksLeft = 0;
+  if (BUZZER_PIN >= 0) noTone(BUZZER_PIN);
+}
+
+void startTalk(int count) {
+  // A silent follow-up servo command must not cut off a bounded phrase.
+  // H / watchdog home explicitly stops all sound.
+  if (count <= 0 || BUZZER_PIN < 0) return;
+  stopTalk();
+  talksLeft = count; talkStep = 0; talkVariant = 0; talking = true;
+  talkStarted = millis(); talkUpdated = talkStarted - 10;
+}
+
+void updateTalk() {
+  if (!talking) return;
+  unsigned long now = millis();
+  unsigned long elapsed = now - talkStarted;
+  if (elapsed >= TALK_TIME[talkStep]) {
+    noTone(BUZZER_PIN);
+    ++talkStep;
+    if (talkStep >= TALK_STEPS) {
+      if (--talksLeft == 0) { stopTalk(); return; }
+      talkStep = 0; ++talkVariant;
+    }
+    talkStarted = now; talkUpdated = now - 10; elapsed = 0;
+  }
+  if (now - talkUpdated < 10) return;
+  talkUpdated = now;
+  int from = TALK_START[talkStep], to = TALK_END[talkStep];
+  if (from == 0) { noTone(BUZZER_PIN); return; }
+  long frequency = from + (talkVariant % 2) * 180
+      + (long)(to - from) * elapsed / TALK_TIME[talkStep];
+  tone(BUZZER_PIN, (unsigned int)frequency);
+}
 char input[80];
 byte used = 0;
 bool overflowed = false;
@@ -37,14 +79,14 @@ bool lcdReady = false;
 enum {EYE_OPEN, EYE_CLOSED, EYE_HAPPY, EYE_WIDE, EYE_X, EYE_HALF,
       MOUTH_LEFT, MOUTH_RIGHT};
 const byte GLYPHS[8][8] PROGMEM = {
-  {0x00, 0x0E, 0x1F, 0x1F, 0x1F, 0x0E, 0x00, 0x00},  // EYE_OPEN
-  {0x00, 0x00, 0x00, 0x1F, 0x1F, 0x00, 0x00, 0x00},  // EYE_CLOSED
-  {0x00, 0x00, 0x04, 0x0E, 0x1B, 0x00, 0x00, 0x00},  // EYE_HAPPY
-  {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E, 0x00},  // EYE_WIDE
+  {0x00, 0x0E, 0x1B, 0x19, 0x1F, 0x0E, 0x00, 0x00},  // EYE_OPEN: glint
+  {0x00, 0x00, 0x00, 0x11, 0x0E, 0x00, 0x00, 0x00},  // EYE_CLOSED
+  {0x00, 0x00, 0x0E, 0x11, 0x11, 0x00, 0x00, 0x00},  // EYE_HAPPY
+  {0x00, 0x0E, 0x11, 0x15, 0x15, 0x11, 0x0E, 0x00},  // EYE_WIDE
   {0x00, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x00, 0x00},  // EYE_X
-  {0x00, 0x00, 0x1F, 0x1F, 0x0E, 0x00, 0x00, 0x00},  // EYE_HALF
-  {0x00, 0x00, 0x00, 0x00, 0x10, 0x08, 0x07, 0x00},  // MOUTH_LEFT
-  {0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x1C, 0x00},  // MOUTH_RIGHT
+  {0x00, 0x00, 0x1F, 0x11, 0x0E, 0x00, 0x00, 0x00},  // EYE_HALF
+  {0x00, 0x00, 0x00, 0x10, 0x10, 0x08, 0x07, 0x00},  // MOUTH_LEFT
+  {0x00, 0x00, 0x00, 0x01, 0x01, 0x02, 0x1C, 0x00},  // MOUTH_RIGHT
 };
 
 
@@ -52,7 +94,7 @@ enum {FACE_READY, FACE_REST, FACE_WALK, FACE_CURIOUS, FACE_HAPPY,
       FACE_STOPPING, FACE_ERROR, FACE_EXPLORE, FACE_SLEEP, FACE_THINK, FACE_COUNT};
 // Preserve L 0..7 meanings; append sleep and thinking at 8 and 9.
 const byte FACES[FACE_COUNT][3] PROGMEM = {
-  {EYE_OPEN, '_', '_'}, {EYE_HALF, '_', '_'},
+  {EYE_OPEN, MOUTH_LEFT, MOUTH_RIGHT}, {EYE_HALF, MOUTH_LEFT, MOUTH_RIGHT},
   {EYE_OPEN, MOUTH_LEFT, MOUTH_RIGHT}, {EYE_WIDE, 'o', 'o'},
   {EYE_HAPPY, MOUTH_LEFT, MOUTH_RIGHT}, {EYE_HALF, '_', '_'},
   {EYE_X, '/', '\\'}, {EYE_OPEN, MOUTH_LEFT, MOUTH_RIGHT},
@@ -63,8 +105,14 @@ byte faceRow = 2;
 unsigned long faceAt = 0, lastFaceStep = 0;
 
 void drawFace() {
+  static bool previousBlink = false;
   if (!lcdReady) return;
-  if (drawingFace != face) { drawingFace = face; faceRow = 0; }
+  bool canBlink = face == FACE_READY || face == FACE_WALK ||
+      face == FACE_CURIOUS || face == FACE_EXPLORE || face == FACE_THINK;
+  bool blink = canBlink && millis() % 2800UL >= 2620UL;
+  if (drawingFace != face || blink != previousBlink) {
+    drawingFace = face; previousBlink = blink; faceRow = 0;
+  }
   if (faceRow >= 2 || millis()-lastFaceStep < 20) return;
   lastFaceStep = millis();
   // Only one row per tick, after servo servicing, at standard 100 kHz.
@@ -73,10 +121,12 @@ void drawFace() {
   }
   for (byte col = 0; col < 16; ++col) {
     byte cell = ' ';
-    if (faceRow == 0 && (col == 4 || col == 11))
-      cell = pgm_read_byte(&FACES[face][0]);
+    if (faceRow == 0 && (col == 5 || col == 10))
+      cell = blink ? (byte)EYE_CLOSED : pgm_read_byte(&FACES[face][0]);
     else if (faceRow == 1 && (col == 7 || col == 8))
       cell = pgm_read_byte(&FACES[face][col-6]);
+    else if (faceRow == 1 && face == FACE_HAPPY && (col == 4 || col == 11))
+      cell = '*'; // Blushing cheeks.
     if (lcd.write(cell) != 1) {
       lcdReady = false; Serial.println("E lcd_io"); return;
     }
@@ -93,8 +143,7 @@ void state() {
 void home() {
   targetPan = PAN_HOME; targetTilt = TILT_HOME;
   active = true; sequence = 0; settledAt = 0;
-  beeps = 0; sounding = false;
-  if (BUZZER_PIN >= 0) noTone(BUZZER_PIN);
+  stopTalk();
 }
 void command() {
   if (input[0] == 'L') {
@@ -121,7 +170,7 @@ void command() {
   lastContact = millis();
   sequence = seq; targetPan = p; targetTilt = t;
   active = true; settledAt = 0;
-  beeps = BUZZER_PIN >= 0 ? b : 0; beepAt = millis();
+  startTalk(b);
 }
 void setup() {
   Serial.begin(115200);
@@ -184,9 +233,5 @@ void loop() {
     }
   }
   drawFace();
-  if (BUZZER_PIN >= 0 && now-beepAt >= 130) {
-    beepAt = now;
-    if (sounding) { noTone(BUZZER_PIN); sounding = false; }
-    else if (beeps > 0) { tone(BUZZER_PIN, 1800); sounding = true; --beeps; }
-  }
+  updateTalk();
 }

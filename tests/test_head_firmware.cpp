@@ -24,27 +24,49 @@ int main() {
   Serial.incoming=std::string(120,'x')+"M 4 90 100 0\n"; loop();
   assert(targetTilt==TILT_HOME); // Overflow line cannot execute a suffix command.
   Serial.incoming="L 4\n"; loop();
-  assert(lcd.rows[0][4]==EYE_HAPPY && lcd.rows[0][11]==EYE_HAPPY);
+  assert(lcd.rows[0][5]==EYE_HAPPY && lcd.rows[0][10]==EYE_HAPPY);
   int firstRowWrites=lcd.writes;
   fakeTime+=20; loop();
   assert(lcd.writes-firstRowWrites==16);
   assert(lcd.rows[1][7]==MOUTH_LEFT && lcd.rows[1][8]==MOUTH_RIGHT);
+  assert(lcd.rows[1][4]=='*' && lcd.rows[1][11]=='*');
   int writes=lcd.writes;
   Serial.incoming="L 4\n"; loop();
   assert(lcd.writes==writes); // Same face does not flash/rewrite LCD.
   fakeTime+=20; Serial.incoming="L 1\n"; loop();
   fakeTime+=20; loop();
-  assert(lcd.rows[1]=="       __       "); // Old mouth removed.
+  assert(lcd.rows[1][4]==' ' && lcd.rows[1][11]==' '); // Cheeks removed.
   Serial.incoming="L 10\n"; loop();
   assert(face==1);
   unsigned long contact=lastContact;
   Serial.incoming="L 3\n"; loop();
   assert(lastContact==contact); // LCD must not refresh motion lease.
   fakeTime+=3100; loop();
-  assert(face==6 && lcd.rows[0][4]==EYE_X);
+  assert(face==6 && lcd.rows[0][5]==EYE_X);
+  fakeTime=8220; Serial.incoming="L 0\n"; loop();
+  assert(lcd.rows[0][5]==EYE_CLOSED); // 2620ms into blink cycle.
+  fakeTime=8400; loop();
+  assert(lcd.rows[0][5]==EYE_OPEN);
   lcd.fail=true;
   fakeTime+=20; Serial.incoming="L 0\n"; loop();
   assert(!lcdReady);
   Serial.incoming="M 9 84 65 2\n"; loop();
-  assert(sequence==9 && beeps==2); // Missing LCD cannot disable servos/buzzer.
+  assert(sequence==9 && talksLeft==2); // Missing LCD cannot disable sound.
+  for (int i=0; i<15; ++i) {fakeTime+=10; loop();}
+  Serial.incoming="M 10 90 65 0\n"; loop();
+  assert(talking); // Following movement does not truncate speech.
+  for (int i=0; i<100; ++i) {fakeTime+=10; loop();}
+  assert(!talking && !toneActive && panAngle==90);
+  bool rises=false, falls=false;
+  for (size_t i=1; i<toneFrequencies.size(); ++i) {
+    rises |= toneFrequencies[i]>toneFrequencies[i-1];
+    falls |= toneFrequencies[i]<toneFrequencies[i-1];
+  }
+  assert(rises && falls);
+  Serial.incoming="M 11 84 65 3\n"; loop();
+  Serial.incoming="H\n"; loop();
+  assert(!talking && !toneActive);
+  Serial.incoming="M 12 90 70 3\n"; loop();
+  fakeTime+=2100; loop();
+  assert(!talking && targetPan==PAN_HOME); // Watchdog cancels speech too.
 }
