@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 430" fill="none">
+<title>노란 안테나와 푸른 눈을 가진 작은 탐험 로봇 오디</title>
+<defs>
+ <linearGradient id="shell" x1="130" y1="60" x2="360" y2="310" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFEED"/><stop offset=".52" stop-color="#FFE8A5"/><stop offset="1" stop-color="#E9C46A"/></linearGradient>
+ <linearGradient id="body" x1="190" y1="265" x2="310" y2="375" gradientUnits="userSpaceOnUse"><stop stop-color="#FFF8DA"/><stop offset="1" stop-color="#EFCD79"/></linearGradient>
+ <radialGradient id="eye"><stop stop-color="#273B44"/><stop offset=".7" stop-color="#101C24"/><stop offset="1" stop-color="#080E14"/></radialGradient>
+ <linearGradient id="rim"><stop stop-color="#AEF0FF"/><stop offset="1" stop-color="#46BADD"/></linearGradient>
+</defs>
+<circle cx="261" cy="204" r="172" fill="#FFEBAB"/><circle cx="391" cy="74" r="12" fill="#FFE08A"/><circle cx="91" cy="179" r="6" fill="#EFCF7C"/>
+<ellipse cx="252" cy="389" rx="132" ry="14" fill="#CBA75C" opacity=".16"/>
+<path d="M345 353c22-49 48-67 66-68-2 33-22 63-57 80" fill="#B1C19B"/>
+<path d="M361 365c4-39 4-64-11-84-14 27-8 58 11 84" fill="#CAD2B0"/>
+<path d="M150 361c-24-24-41-33-59-29 11 26 31 40 57 41" fill="#C6CEAC"/>
+<rect x="161" y="312" width="57" height="70" rx="25" fill="#34373B"/><rect x="306" y="308" width="54" height="74" rx="25" fill="#34373B"/>
+<ellipse cx="340" cy="348" rx="14" ry="24" fill="#54585B"/>
+<path d="M177 300c9-29 25-40 53-41h62c30 0 45 20 50 43l7 41c2 13-7 25-22 25H179c-12 0-19-12-16-24z" fill="url(#body)" stroke="#C7AD6D" stroke-width="2"/>
+<path d="M177 300c43 15 117 15 163-3" stroke="#FFFDF0" stroke-width="5"/>
+<rect x="207" y="243" width="84" height="31" rx="13" fill="#393B3D"/>
+<path d="m295 89 16-39" stroke="#31373B" stroke-width="12" stroke-linecap="round"/><circle cx="316" cy="37" r="15" fill="#FFE08A"/><circle cx="311" cy="32" r="5" fill="#FFFDF0"/>
+<ellipse cx="346" cy="178" rx="31" ry="46" fill="#303D43"/><ellipse cx="352" cy="176" rx="21" ry="31" fill="#69D7F3"/><ellipse cx="354" cy="176" rx="15" ry="25" fill="#25343C"/>
+<path d="M140 153c7-64 53-83 103-82 69 1 112 48 103 114-8 59-43 84-112 80-62-3-103-49-94-112z" fill="url(#shell)" stroke="#D2BA80" stroke-width="2"/>
+<path d="M154 140c14-46 62-64 109-54" stroke="#FFFDF2" stroke-width="8" stroke-linecap="round"/>
+<ellipse cx="223" cy="173" rx="76" ry="88" fill="#44474A" transform="rotate(9 223 173)"/>
+<ellipse cx="220" cy="176" rx="66" ry="78" fill="url(#eye)" transform="rotate(9 220 176)"/>
+<ellipse cx="219" cy="176" rx="55" ry="65" stroke="url(#rim)" stroke-width="5" transform="rotate(9 219 176)"/>
+<ellipse cx="220" cy="181" rx="30" ry="43" fill="#070E13"/><ellipse cx="208" cy="148" rx="16" ry="20" fill="white" opacity=".92"/><circle cx="241" cy="179" r="7" fill="#B1EEFF" opacity=".9"/>
+<rect x="181" y="321" width="88" height="21" rx="10" fill="#303C43"/><rect x="191" y="329" width="32" height="5" rx="2.5" fill="#6ED9FF"/><circle cx="253" cy="332" r="4" fill="#6ED9FF"/>
+<text x="286" y="340" font-family="Arial,sans-serif" font-size="18" font-weight="bold" fill="#625742">ODI</text>
+<path d="m118 89 5 13m-24 3 12 6m242-6 9-11" stroke="#E7C262" stroke-width="5" stroke-linecap="round"/>
+</svg>

@@ -288,38 +288,31 @@ function renderIdle(){
 
   el.screen.innerHTML = `
     <div class="idle">
-      <div class="mark"><span></span></div>
-      <h1>Odi</h1>
-
-      <div class="watch">
-        <div class="lens" id="idleCam"><div class="wait">아직 눈을 못 떴어요</div></div>
-        <div class="watchfoot">
-          <span>지금 보고 있는 것</span>
-          <span class="mono" id="idleShotAt">—</span>
+      <section class="welcome">
+        <div class="welcome-copy">
+          <span class="section-kicker">YOUR LITTLE EXPLORER</span>
+          <h1>작은 호기심으로,<br>함께 만드는 하루.</h1>
+          <p>익숙한 공간에도 새로운 발견이 숨어 있어요.<br>오늘은 오디와 어떤 하루를 보내볼까요?</p>
+          <div class="welcome-tags"><span>탐험</span><i>·</i><span>관찰</span><i>·</i><span>기록</span></div>
         </div>
+        <img class="mascot" src="/media/odi-companion.svg" alt="호기심 가득한 눈으로 바라보는 오디" width="480" height="430">
+      </section>
+      <div class="home-grid">
+        <section class="mode-section" aria-labelledby="modeHeading">
+          <div class="section-heading"><span class="section-kicker">LET’S SPEND THE DAY</span><h2 id="modeHeading">오늘은 무엇을 할까요?</h2></div>
+          <div class="mode-cards">
+            <article class="mode-card normal-card"><span class="mode-icon" aria-hidden="true">☀</span><h3>일반 모드</h3><p>주변을 둘러보고, 관심 있는 물체에<br>표정과 소리로 마음을 표현해요.</p><button class="start" id="normalBtn" type="button">일반모드 시작</button></article>
+            <article class="mode-card explore-card"><span class="mode-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="m16 8-2.5 5.5L8 16l2.5-5.5Z"/></svg></span><h3>탐험 모드</h3><p>새로운 곳을 탐험하고 관찰한 뒤,<br>오늘의 발견을 일기로 남겨요.</p><button class="start" id="startBtn" type="button">탐험 보내기</button></article>
+          </div>
+          <p class="gate" id="gate" role="status">상태를 확인하는 중</p>
+        </section>
+        <section class="live-card" aria-label="오디 카메라와 배터리">
+          <div class="section-heading"><span class="section-kicker">ODI’S VIEW</span><h2>오디의 시선</h2></div>
+          <div class="watch"><div class="lens" id="idleCam"><div class="wait">카메라 영상을 기다리고 있어요</div></div><div class="watchfoot"><span>지금 보고 있는 것</span><span class="mono" id="idleShotAt">—</span></div></div>
+          <div class="vitals"><div class="vital" id="vBat"><span class="k">배터리</span><span class="v mono" id="vBatPct">—</span><span class="bar"><i id="vBatFill"></i></span></div></div>
+        </section>
       </div>
-
-      <div class="vitals">
-        <div class="vital" id="vBat">
-          <span class="k">배터리</span>
-          <span class="v mono" id="vBatPct">—</span>
-          <span class="bar"><i id="vBatFill"></i></span>
-        </div>
-        <div class="vital soon">
-          <span class="k">온도</span>
-          <span class="v mono">—</span>
-        </div>
-        <div class="vital soon">
-          <span class="k">습도</span>
-          <span class="v mono">—</span>
-        </div>
-      </div>
-
-      <button class="start" id="startBtn">탐험 보내기</button>
-      <button class="start" id="normalBtn">일반모드 시작</button>
-      <p class="gate" id="gate">상태를 확인하는 중</p>
-
-      <div class="past" id="pastList"></div>
+      <section class="memory-section"><div class="section-heading"><span class="section-kicker">LITTLE MOMENTS, BIG MEMORIES</span><h2>오디가 남긴 이야기</h2><a href="/diary">일기 모두 보기 <span aria-hidden="true">↗</span></a></div><div class="past" id="pastList"></div></section>
     </div>`;
 
   document.getElementById('startBtn').addEventListener('click', startMission);

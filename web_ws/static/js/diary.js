@@ -191,7 +191,7 @@ function blockHtml(b){
      this.parentNode 는 .shot 이고, 거기 텍스트를 넣으면 회색 자리가 된다. */
   const shot = o.photo_url
     ? `<div class="shot"><img src="${o.photo_url}" alt="${nameOf(o)}"
-         onerror="this.remove(); this.parentNode.textContent='사진을 찾을 수 없어요';"></div>`
+         onerror="this.parentNode.textContent='사진을 찾을 수 없어요';"></div>`
     : `<div class="shot">사진 없음</div>`;
 
   /* 글이 없는 블록(AI 가 빠뜨림)은 사진과 시각만 남기고 조용히 넘어간다.

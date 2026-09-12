@@ -28,10 +28,17 @@
 <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@300;400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/odi.css">
 <link rel="stylesheet" href="/css/idle.css">
+<link rel="stylesheet" href="/css/companion.css">
 </head>
 <body data-tone="dark">
 
 <div class="wrap">
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="오디 홈">ODI<span class="brand-dot" aria-hidden="true"></span></a>
+    <span class="brand-caption">작지만, 세상을 탐험하는 로봇</span>
+    <nav aria-label="주 메뉴"><a href="/" aria-current="page">오디와 함께</a><a href="/diary" >탐험 일기</a></nav>
+  </header>
+ 
 
   <div class="offline" id="offline" hidden>
     <span id="offlineMsg"></span>
@@ -83,5 +90,7 @@
 <!-- schema.js 가 먼저. exploring.js 가 describe() / why() / SAY 를 쓴다. -->
 <script src="/js/schema.js"></script>
 <script src="/js/exploring.js"></script>
+<footer class="site-footer"><span>ODI · Exploration Diary Robot</span><span>탐험하고, 발견하고, 기억해요.</span></footer>
 </body>
 </html>
+
