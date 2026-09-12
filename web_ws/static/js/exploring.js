@@ -301,8 +301,8 @@ function renderIdle(){
         <section class="mode-section" aria-labelledby="modeHeading">
           <div class="section-heading"><span class="section-kicker">LET’S SPEND THE DAY</span><h2 id="modeHeading">오늘은 무엇을 할까요?</h2></div>
           <div class="mode-cards">
-            <article class="mode-card normal-card"><span class="mode-icon" aria-hidden="true">☀</span><h3>일반 모드</h3><p>주변을 둘러보고, 관심 있는 물체에<br>표정과 소리로 마음을 표현해요.</p><button class="start" id="normalBtn" type="button">일반모드 시작</button></article>
-            <article class="mode-card explore-card"><span class="mode-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="m16 8-2.5 5.5L8 16l2.5-5.5Z"/></svg></span><h3>탐험 모드</h3><p>새로운 곳을 탐험하고 관찰한 뒤,<br>오늘의 발견을 일기로 남겨요.</p><button class="start" id="startBtn" type="button">탐험 보내기</button></article>
+            <article class="mode-card normal-card"><span class="mode-icon" aria-hidden="true">☀</span><h3>일반 모드</h3><p>주변을 둘러보고, 발견한 물체에 표정과 소리로 반응해요.</p><button class="start" id="normalBtn" type="button">일반모드 시작</button></article>
+            <article class="mode-card explore-card"><span class="mode-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="m16 8-2.5 5.5L8 16l2.5-5.5Z"/></svg></span><h3>탐험 모드</h3><p>공간을 탐험하며 물체를 관찰하고, 발견한 순간을 일기로 남겨요.</p><button class="start" id="startBtn" type="button">탐험 보내기</button></article>
           </div>
           <p class="gate" id="gate" role="status">상태를 확인하는 중</p>
         </section>

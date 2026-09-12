@@ -33,3 +33,42 @@
     padding-bottom: 24px;
   }
 }
+
+/* Keep description lines below the icon/title, without float wrapping. */
+.mode-cards { align-items: stretch; }
+.mode-cards .mode-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-rows: auto 1fr auto;
+  column-gap: 14px;
+  row-gap: 14px;
+  align-items: start;
+}
+.mode-cards .mode-icon {
+  float: none;
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+}
+.mode-cards .mode-card h3 {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  margin: 0;
+}
+.mode-cards .mode-card p {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-height: 0;
+  margin: 0;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  line-height: 1.85;
+}
+.mode-cards .mode-card .start {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  justify-self: start;
+  align-self: end;
+  margin: 0;
+}
