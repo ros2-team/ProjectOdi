@@ -1,0 +1,342 @@
+/* ODI exploration dashboard
+   Visual-only layer. The live DOM/update strategy in exploring.js is unchanged. */
+
+#exploring {
+  color: #2e2e2e;
+}
+
+#exploring .status {
+  position: relative;
+  margin: 0 0 20px;
+  padding: 24px 26px 22px;
+  border: 1px solid #eadfca;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #fff4cc 0%, #fff9e9 58%, #fffdf7 100%);
+  box-shadow: 0 14px 36px rgba(93, 73, 33, .06);
+}
+
+#exploring .eyebrow {
+  margin-bottom: 10px;
+  color: #8b7c5e;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .12em;
+}
+
+#exploring .eyebrow em {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #ffe8a4;
+  color: #6c5625;
+  font-size: 10px;
+  font-style: normal;
+  letter-spacing: .06em;
+}
+
+#exploring .line {
+  align-items: center;
+}
+
+#exploring .line h2 {
+  color: #252936;
+  font-family: var(--ui);
+  font-size: clamp(23px, 2.3vw, 32px);
+  font-weight: 700;
+  letter-spacing: -1px;
+}
+
+#exploring .clock {
+  padding: 8px 12px;
+  border: 1px solid #eadfca;
+  border-radius: 12px;
+  background: rgba(255,255,255,.62);
+  color: #5d5648;
+  font-size: 20px;
+}
+
+#exploring .gauge {
+  margin-top: 18px;
+}
+
+#exploring .gauge .track {
+  height: 7px;
+  border-radius: 99px;
+  background: #eee5d2;
+}
+
+#exploring .gauge .fill {
+  border-radius: inherit;
+  background: linear-gradient(90deg, #f1be36, #ffd965);
+}
+
+#exploring .gauge .labels {
+  margin-top: 8px;
+  color: #817864;
+}
+
+#exploring .gauge .labels b {
+  color: #5a5141;
+  font-weight: 600;
+}
+
+#exploring .stop-mission {
+  position: absolute;
+  right: 26px;
+  bottom: 20px;
+  margin: 0;
+  padding: 9px 14px;
+  border: 1px solid #dccb9f;
+  border-radius: 999px;
+  background: #fffdf7;
+  color: #715c32;
+  font-size: 11px;
+}
+
+#exploring .stop-mission:hover {
+  border-color: #d0af55;
+  background: #fff2c8;
+  color: #4f3f20;
+}
+
+#exploring .cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(300px, .85fr);
+  gap: 20px;
+  align-items: start;
+}
+
+#exploring .cols > div:first-child {
+  min-width: 0;
+}
+
+#exploring .cam,
+#exploring .mapbox,
+#exploring .feed {
+  border: 1px solid #eadfca;
+  background: rgba(255, 254, 249, .95);
+  box-shadow: 0 12px 30px rgba(93, 73, 33, .05);
+}
+
+#exploring .cam {
+  margin: 0 0 18px;
+  padding: 16px;
+  border-radius: 20px;
+}
+
+#exploring .cam::before {
+  content: "ODI'S VIEW";
+  display: block;
+  margin: 0 0 10px 2px;
+  color: #9a7d39;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .14em;
+}
+
+#exploring .cam .photo {
+  aspect-ratio: 16 / 10;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #f4f0e5, #ebe5d7);
+  color: #8a8171;
+}
+
+#exploring .cam .photo img {
+  object-fit: contain;
+}
+
+#exploring .cam .cap {
+  margin-top: 10px;
+  color: #837a69;
+  font-size: 10px;
+}
+
+#exploring .mapbox {
+  position: relative;
+  height: 280px;
+  border-radius: 20px;
+  background: #f7f4ea;
+}
+
+#exploring .mapbox::before {
+  content: "탐험 지도";
+  position: absolute;
+  z-index: 3;
+  top: 14px;
+  left: 16px;
+  padding: 6px 9px;
+  border: 1px solid rgba(224, 212, 180, .85);
+  border-radius: 999px;
+  background: rgba(255, 253, 247, .9);
+  color: #665d4e;
+  font-size: 10px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+#exploring .feed {
+  min-height: 590px;
+  padding: 22px;
+  border-radius: 20px;
+}
+
+#exploring .feed h3 {
+  position: relative;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #eee5d2;
+  color: #252936;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -.5px;
+}
+
+#exploring .feed h3::before {
+  content: "TODAY'S DISCOVERIES";
+  display: block;
+  margin-bottom: 4px;
+  color: #9a7d39;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .14em;
+}
+
+#exploring .queue {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #eee5d2;
+  border-left: 3px solid #efc34d;
+  border-radius: 10px;
+  background: #fff9e9;
+  color: #7b705d;
+}
+
+#exploring .entry {
+  margin: 10px 0;
+  padding: 14px 14px 14px 18px;
+  border: 1px solid #eee5d2;
+  border-left: 4px solid #ded4bc;
+  border-radius: 14px;
+  background: #fffdf8;
+}
+
+#exploring .entry::before {
+  display: none;
+}
+
+#exploring .entry .name {
+  color: #302d27;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#exploring .entry .said {
+  color: #6d665a;
+  font-family: var(--ui);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+#exploring .entry .photo {
+  width: 100%;
+  max-width: 180px;
+  margin-top: 9px;
+  border-radius: 10px;
+  background: #f2eee3;
+}
+
+#exploring .entry .meta {
+  color: #958c7b;
+  font-size: 9px;
+}
+
+#exploring .entry.observe {
+  border-left-color: #e8b932;
+  background: #fffaf0;
+}
+
+#exploring .entry.done {
+  border-left-color: #87aa7d;
+  background: #fbfdf7;
+}
+
+#exploring .entry.ignore {
+  opacity: .58;
+  border-left-color: #d8d2c5;
+  background: #faf8f2;
+}
+
+#exploring .tag {
+  border-radius: 999px;
+}
+
+#exploring .tag.observe {
+  background: #fff0bd;
+  color: #735818;
+}
+
+#exploring .tag.done {
+  background: #e8f0e4;
+  color: #426249;
+}
+
+#exploring .empty,
+#exploring .more {
+  color: #908775;
+}
+
+.site-header nav a[data-nav="explore"][aria-current="page"] {
+  background: linear-gradient(90deg, #fff0b8, #fff6d8);
+  color: #302b23;
+}
+
+.site-header nav a[data-nav="explore"][aria-current="page"]::before {
+  color: #e8b72c;
+}
+
+@media (max-width: 1120px) {
+  #exploring .cols {
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr);
+  }
+
+  #exploring .feed {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  #exploring .cols {
+    grid-template-columns: 1fr;
+  }
+
+  #exploring .feed {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 680px) {
+  #exploring .status {
+    padding: 20px;
+  }
+
+  #exploring .line h2 {
+    font-size: 23px;
+  }
+
+  #exploring .clock {
+    font-size: 16px;
+  }
+
+  #exploring .stop-mission {
+    position: static;
+    margin-top: 14px;
+  }
+
+  #exploring .cam,
+  #exploring .feed {
+    padding: 14px;
+  }
+
+  #exploring .mapbox {
+    height: 230px;
+  }
+}
