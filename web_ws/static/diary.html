@@ -9,24 +9,33 @@
 <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@300;400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/odi.css">
 <link rel="stylesheet" href="/css/companion.css">
+<link rel="stylesheet" href="/css/dashboard.css">
+<link rel="stylesheet" href="/css/dashboard-polish.css">
+<link rel="stylesheet" href="/css/layout-fixes.css">
+<link rel="stylesheet" href="/css/diary-dashboard.css">
 </head>
 
 <!-- data-tone="light" 가 탐험 화면과의 결정적 차이다.
      밖에 나가 있을 땐 어둡고, 집에 돌아와 일기를 쓰면 종이색.
      문서의 탐험 → 복귀 → 회고 흐름이 화면 색으로 드러난다. -->
-<body data-tone="light">
+<body data-tone="light" class="diary-page">
 
 <div class="wrap">
   <header class="site-header">
     <a class="brand" href="/" aria-label="오디 홈">ODI<span class="brand-dot" aria-hidden="true"></span></a>
     <span class="brand-caption">작지만, 세상을 탐험하는 로봇</span>
-    <nav aria-label="주 메뉴"><a href="/" >오디와 함께</a><a href="/diary" aria-current="page">탐험 일기</a></nav>
+    <nav aria-label="주 메뉴">
+      <a href="/" data-nav="home">홈</a>
+      <a href="/#startBtn" data-nav="explore">탐험하기</a>
+      <a href="/diary" data-nav="diary" aria-current="page">탐험 일기</a>
+      <a href="/#normalBtn" data-nav="normal">일반 모드</a>
+    </nav>
   </header>
  
   <!-- 내용은 전부 diary.js 가 채운다.
        상태(일기 준비 중 / 완성 / 없음)에 따라 아예 다른 화면이 들어가므로
        뼈대를 미리 짜두지 않는다. -->
-  <div id="page"></div>
+  <main id="page" aria-live="polite"></main>
 </div>
 
 <!-- schema.js 가 먼저. diary.js 가 describe() / kr() / iga() 를 쓴다. -->
@@ -35,3 +44,4 @@
 <footer class="site-footer"><span>ODI · Exploration Diary Robot</span><span>탐험하고, 발견하고, 기억해요.</span></footer>
 </body>
 </html>
+

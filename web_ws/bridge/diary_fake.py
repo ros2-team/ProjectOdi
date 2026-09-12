@@ -274,6 +274,9 @@ def list_sessions():
             "id": s["id"],
             "date": s["started_at"][5:10].replace("-", "."),   # "08.26"
             "line": line,
+            "date_full": s["started_at"][:10].replace("-", "."),
+            "photo_url": next((o["photo_url"] for o in get_observations(s["id"])
+                               if o.get("observed") and o.get("photo_url")), None),
             "observed_count": s["observed_count"],
         })
     return out

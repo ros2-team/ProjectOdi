@@ -58,28 +58,35 @@ async function boot(){
    지난 일기 목록  ( /diary )
    ============================================================ */
 
+function escapeText(value){
+  return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function plainText(value){
+  return new DOMParser().parseFromString(String(value || ''), 'text/html').body.textContent || '';
+}
+function photoMarkup(url, alt, className){
+  const safe = typeof url === 'string' && url.startsWith('/media/') && !/[\\\r\n]/.test(url);
+  return safe
+    ? `<div class="${className}"><img src="${escapeText(url)}" alt="${escapeText(alt)}" loading="lazy" onerror="this.parentNode.classList.add('photo-missing');this.parentNode.textContent='사진을 찾을 수 없어요';"></div>`
+    : `<div class="${className} photo-missing"><span aria-hidden="true">✦</span><span>사진 없이 남긴 기억</span></div>`;
+}
 async function renderList(){
-  let items = [];
+  page.innerHTML = '<div class="interlude"><h2>오디의 이야기를 가져오고 있어요</h2><p>잠시만 기다려 주세요.</p></div>';
+  let items;
   try{
-    items = await (await fetch('/api/sessions')).json();
-  }catch(e){
-    return renderError('목록을 불러오지 못했어요.', String(e));
-  }
-
-  if(!items.length){
-    return renderError('아직 일기가 없어요.', 'Odi 를 한 번 내보내 보세요.');
-  }
-
+    const res = await fetch('/api/sessions');
+    if(!res.ok) throw new Error('일기 목록을 다시 불러와 주세요.');
+    items = await res.json();
+    if(!Array.isArray(items)) throw new Error('목록을 확인할 수 없어요.');
+  }catch(e){ return renderError('일기를 불러오지 못했어요.', e.message); }
   page.innerHTML = `
-    <div class="past">
-      <h2>지난 일기</h2>
-      ${items.map(s => `
-        <a href="/diary/${s.id}">
-          <span class="d">${s.date}</span>
-          <span class="t">${s.line || '(일기 없음)'}</span>
-          <span class="n">관찰 ${s.observed_count}</span>
-        </a>`).join('')}
-    </div>`;
+    <section class="journal-intro"><div><span class="section-kicker">ODI’S LITTLE MEMORIES</span><h1>작은 발견이 모여,<br>오디의 이야기가 돼요.</h1><p>함께 지나온 공간과 호기심 가득했던 순간들을 만나보세요.</p></div><img src="/media/odi-companion.svg" alt="" width="200" height="180"></section>
+    <div class="journal-heading"><h2>탐험 일기</h2><span>총 ${items.length}편의 이야기</span></div>
+    ${items.length ? `<div class="journal-grid">${items.map(item => `
+      <a class="journal-card" href="/diary/${encodeURIComponent(item.id)}">
+        ${photoMarkup(item.photo_url, '탐험 대표 사진', 'journal-photo')}
+        <div class="journal-card-copy"><div class="journal-meta"><span>${escapeText(item.date_full || item.date)}</span><span>관찰 ${escapeText(item.observed_count ?? 0)}개</span></div><h3>${escapeText(plainText(item.line)) || '오늘의 작은 발견'}</h3><span class="journal-read">이야기 펼쳐보기 <span aria-hidden="true">↗</span></span></div>
+      </a>`).join('')}</div>` : '<section class="journal-empty"><h2>첫 번째 이야기를 기다리고 있어요.</h2><p>오디가 탐험을 마치면 사진과 이야기가 이곳에 쌓여요.</p><a href="/">오디 만나러 가기 →</a></section>'}`;
 }
 
 
@@ -140,10 +147,11 @@ function render(s, obs){
   // 사진이 통째로 사라지는 것보다는 낫다.
 
   page.innerHTML = `
-    <div class="diary">
+    <a class="journal-back" href="/diary">← 모든 일기</a>
+    <article class="diary">
 
       <div class="cover">
-        <div class="d">${s.started_at}</div>
+        <div class="d">${escapeText(s.started_at)}</div>
         <h1>Odi의 탐험 일기</h1>
         <div class="stats">
           <span>${s.minutes}분</span>
@@ -172,7 +180,7 @@ function render(s, obs){
         <button class="link" id="homeBtn">홈으로</button>
       </div>
 
-    </div>`;
+    </article>`;
 
   bindHome();
 }
@@ -189,10 +197,7 @@ function blockHtml(b){
   /* onerror : 파일이 아직 없거나 경로가 틀렸을 때 깨진 이미지 아이콘 대신
      조용히 자리만 남긴다. 발표 중에 깨진 아이콘이 뜨는 것보다 낫다.
      this.parentNode 는 .shot 이고, 거기 텍스트를 넣으면 회색 자리가 된다. */
-  const shot = o.photo_url
-    ? `<div class="shot"><img src="${o.photo_url}" alt="${nameOf(o)}"
-         onerror="this.parentNode.textContent='사진을 찾을 수 없어요';"></div>`
-    : `<div class="shot">사진 없음</div>`;
+  const shot = photoMarkup(o.photo_url, nameOf(o), 'shot');
 
   /* 글이 없는 블록(AI 가 빠뜨림)은 사진과 시각만 남기고 조용히 넘어간다.
      "글 생성 실패" 같은 문구를 띄우면 그게 더 눈에 띈다. */
@@ -201,7 +206,7 @@ function blockHtml(b){
   return `
     <div class="blk${b.text ? '' : ' textless'}">
       ${shot}${text}
-      <div class="meta">${o.at} · ${nameOf(o)}</div>
+      <div class="meta">${escapeText(o.at)} · ${escapeText(nameOf(o))}</div>
     </div>`;
 }
 
@@ -278,8 +283,8 @@ function bindHome(){
 function renderError(title, detail){
   page.innerHTML = `
     <div class="interlude">
-      <h2>${title}</h2>
-      <p>${detail}</p>
+      <h2>${escapeText(title)}</h2>
+      <p>${escapeText(detail)}</p>
       <div class="footer"><a href="/diary">지난 일기</a><button class="link" id="homeBtn">홈으로</button></div>
     </div>`;
 
@@ -288,3 +293,4 @@ function renderError(title, detail){
 
 
 boot();
+

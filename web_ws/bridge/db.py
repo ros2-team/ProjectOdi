@@ -48,7 +48,8 @@ def list_sessions():
             m.session_id,
             m.started_at,
             d.diary_text,
-            COUNT(o.memory_id) AS observed_count
+            COUNT(o.memory_id) AS observed_count,
+            MIN(NULLIF(o.representative_image_path, '')) AS representative_image_path
         FROM missions AS m
         INNER JOIN diaries AS d
             ON d.session_id = m.session_id
@@ -71,8 +72,10 @@ def list_sessions():
             "id": record["session_id"],
             "date": _format_datetime(record["started_at"], "%m.%d"),
             "line": html.escape(
-                (record["diary_text"] or "").splitlines()[0]
+                next(iter((record["diary_text"] or "").splitlines()), "")
             ),
+            "date_full": _format_datetime(record["started_at"], "%Y.%m.%d"),
+            "photo_url": _photo_url(record.get("representative_image_path")),
             "observed_count": int(record["observed_count"] or 0),
         }
         for record in records
@@ -210,3 +213,4 @@ def get_observations(session_id):
         )
 
     return observations
+
