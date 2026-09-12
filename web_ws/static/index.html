@@ -30,6 +30,7 @@
 <link rel="stylesheet" href="/css/idle.css">
 <link rel="stylesheet" href="/css/companion.css">
 <link rel="stylesheet" href="/css/dashboard.css">
+<link rel="stylesheet" href="/css/dashboard-polish.css">
 </head>
 <body data-tone="dark">
 
@@ -37,7 +38,12 @@
   <header class="site-header">
     <a class="brand" href="/" aria-label="오디 홈">ODI<span class="brand-dot" aria-hidden="true"></span></a>
     <span class="brand-caption">작지만, 세상을 탐험하는 로봇</span>
-    <nav aria-label="주 메뉴"><a href="/" aria-current="page">오디와 함께</a><a href="/diary" >탐험 일기</a></nav>
+    <nav aria-label="주 메뉴">
+      <a href="/" data-nav="home" aria-current="page">홈</a>
+      <a href="#explore" class="nav-action" data-nav="explore" data-dashboard-action="explore">탐험하기</a>
+      <a href="/diary" data-nav="diary">탐험 일기</a>
+      <a href="#normal" class="nav-action" data-nav="normal" data-dashboard-action="normal">일반 모드</a>
+    </nav>
   </header>
  
 
@@ -91,7 +97,7 @@
 <!-- schema.js 가 먼저. exploring.js 가 describe() / why() / SAY 를 쓴다. -->
 <script src="/js/schema.js"></script>
 <script src="/js/exploring.js"></script>
+<script src="/js/dashboard.js"></script>
 <footer class="site-footer"><span>ODI · Exploration Diary Robot</span><span>탐험하고, 발견하고, 기억해요.</span></footer>
 </body>
 </html>
-
