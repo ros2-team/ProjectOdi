@@ -20,6 +20,10 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
+  function setText(element, value) {
+    if (element && element.textContent !== value) element.textContent = value;
+  }
+
   function missionState() {
     try {
       return typeof S !== 'undefined' && S.mission ? S.mission : 'IDLE';
@@ -61,7 +65,7 @@
       const copy = $('p', hero);
       const tags = $('.welcome-tags', hero);
 
-      if (kicker) kicker.textContent = 'EXPLORATION DIARY ROBOT';
+      setText(kicker, 'EXPLORATION DIARY ROBOT');
       if (title) title.innerHTML = '작지만,<br>세상을 탐험하는 로봇 <span class="odi-word">ODI</span>';
       if (copy) copy.innerHTML = '스스로 공간을 탐험하고 새로운 대상을 발견하면,<br>호기심을 따라 관찰하고 그 경험을 일기로 남깁니다.';
       if (tags) tags.innerHTML = '<span>탐험</span><i>·</i><span>발견</span><i>·</i><span>관찰</span><i>·</i><span>기록</span>';
@@ -80,8 +84,8 @@
     if (live) {
       const kicker = $('.section-heading .section-kicker', live);
       const heading = $('.section-heading h2', live);
-      if (kicker) kicker.textContent = "TODAY'S ODI";
-      if (heading) heading.textContent = '오늘의 오디';
+      setText(kicker, "TODAY'S ODI");
+      setText(heading, '오늘의 오디');
 
       if (!$('.today-status', live)) {
         const status = document.createElement('div');
@@ -97,14 +101,14 @@
       }
 
       const watchLabel = $('.watchfoot span:first-child', live);
-      if (watchLabel) watchLabel.textContent = '오디가 보고 있는 화면';
+      setText(watchLabel, '오디가 보고 있는 화면');
     }
 
     const modeHeading = $('#modeHeading', idle);
-    if (modeHeading) modeHeading.textContent = '오디와 무엇을 해볼까요?';
+    setText(modeHeading, '오디와 무엇을 해볼까요?');
 
     const memoryHeading = $('.memory-section .section-heading h2', idle);
-    if (memoryHeading) memoryHeading.textContent = '최근 탐험 일기';
+    setText(memoryHeading, '최근 탐험 일기');
 
     bindSidebarActions();
     syncDashboard();
@@ -115,28 +119,29 @@
     const [label, copy] = STATUS_COPY[mission] || [mission, '오디의 현재 상태를 확인하고 있어요.'];
     const stateEl = document.getElementById('todayMission');
     const copyEl = document.getElementById('todayMissionCopy');
-    if (stateEl) stateEl.textContent = label;
-    if (copyEl) copyEl.textContent = copy;
+    setText(stateEl, label);
+    setText(copyEl, copy);
 
     const exploreButton = document.getElementById('startBtn');
     const normalButton = document.getElementById('normalBtn');
     const idleReady = mission === 'IDLE';
 
     $$('[data-dashboard-action="explore"]').forEach(link => {
-      link.setAttribute('aria-disabled', String(!idleReady || !exploreButton || exploreButton.disabled));
+      const disabled = String(!idleReady || !exploreButton || exploreButton.disabled);
+      if (link.getAttribute('aria-disabled') !== disabled) link.setAttribute('aria-disabled', disabled);
     });
     $$('[data-dashboard-action="normal"]').forEach(link => {
-      link.setAttribute('aria-disabled', String(!idleReady || !normalButton || normalButton.disabled));
+      const disabled = String(!idleReady || !normalButton || normalButton.disabled);
+      if (link.getAttribute('aria-disabled') !== disabled) link.setAttribute('aria-disabled', disabled);
     });
 
     const heroButton = $('.hero-cta');
     if (heroButton) {
       heroButton.disabled = !idleReady || !exploreButton || exploreButton.disabled;
-      if (exploreButton && exploreButton.disabled && exploreButton.textContent.includes('깨우는 중')) {
-        heroButton.textContent = '탐험을 준비하고 있어요…';
-      } else {
-        heroButton.textContent = '지금 탐험하러 가기  →';
-      }
+      const label = exploreButton && exploreButton.disabled && exploreButton.textContent.includes('깨우는 중')
+        ? '탐험을 준비하고 있어요…'
+        : '지금 탐험하러 가기  →';
+      setText(heroButton, label);
     }
   }
 
@@ -146,10 +151,13 @@
 
     const screen = document.getElementById('screen');
     if (screen) {
+      /* renderIdle()/renderInterlude() replace #screen's direct children.
+         We only need to watch that top-level replacement. Watching the whole subtree
+         caused our own text updates to retrigger the observer indefinitely in preview. */
       new MutationObserver(() => {
         enhanceIdle();
         syncDashboard();
-      }).observe(screen, { childList: true, subtree: true });
+      }).observe(screen, { childList: true });
     }
 
     window.setInterval(syncDashboard, 1000);
