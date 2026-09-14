@@ -6,6 +6,29 @@ from dataclasses import dataclass
 from nav_msgs.msg import OccupancyGrid
 
 
+class _FreeCellRange:
+    """Compatibility sentinel that treats low occupancy probabilities as free.
+
+    ExplorationNode historically compares map values directly with
+    ``FrontierDetector.FREE``.  Cartographer can publish known free cells with
+    occupancy probabilities other than exactly zero, so keep those callers
+    working while applying the same 0..49 free-space rule everywhere.
+    """
+
+    def __eq__(self, value) -> bool:
+        try:
+            numeric = int(value)
+        except (TypeError, ValueError):
+            return False
+        return 0 <= numeric < 50
+
+    def __ne__(self, value) -> bool:
+        return not self.__eq__(value)
+
+    def __repr__(self) -> str:
+        return 'free[0..49]'
+
+
 @dataclass(frozen=True)
 class FrontierCandidate:
     cell_x: int
@@ -21,7 +44,10 @@ class FrontierCandidate:
 
 class FrontierDetector:
 
-    FREE = 0
+    # Cartographer OccupancyGrid values are probabilities.  A known cell below
+    # the occupied threshold is traversable; requiring exactly 0 makes a fresh
+    # map appear to have no frontier even though free space already exists.
+    FREE = _FreeCellRange()
 
     UNKNOWN = -1
 
@@ -42,6 +68,11 @@ class FrontierDetector:
         self.information_gain_weight = information_gain_weight
         self.distance_weight = distance_weight
 
+    @staticmethod
+    def is_free_value(value: int) -> bool:
+        """Return True for known traversable occupancy values."""
+        return value != FrontierDetector.UNKNOWN and 0 <= value < 50
+
     def is_frontier_cell(
             self,
             x: int,
@@ -57,7 +88,7 @@ class FrontierDetector:
             width,
         )
 
-        if data[index] != self.FREE:
+        if not self.is_free_value(data[index]):
             return False
 
         for neighbor_x, neighbor_y in (
@@ -237,7 +268,7 @@ class FrontierDetector:
 
         average_y = sum(
             cell_y
-            for cell_y, _ in cluster
+            for _, cell_y in cluster
         ) / len(cluster)
 
         return min(
@@ -254,17 +285,28 @@ class FrontierDetector:
         cell_y: int,
         map_message: OccupancyGrid,
     ) -> tuple[float, float]:
+        """Convert a grid cell center to map-frame coordinates.
 
+        OccupancyGrid origin is a full pose, not only a translation.  Applying
+        its yaw keeps goals correct even when a newly-created map is rotated
+        relative to the previous odom frame.
+        """
         resolution = map_message.info.resolution
-        origin = map_message.info.origin.position
+        origin = map_message.info.origin
 
-        world_x = (
-            origin.x + (cell_x + 0.5) * resolution
-        )
+        local_x = (cell_x + 0.5) * resolution
+        local_y = (cell_y + 0.5) * resolution
 
-        world_y = (
-            origin.y + (cell_y + 0.5) * resolution
+        q = origin.orientation
+        yaw = math.atan2(
+            2.0 * (q.w * q.z + q.x * q.y),
+            1.0 - 2.0 * (q.y * q.y + q.z * q.z),
         )
+        cos_yaw = math.cos(yaw)
+        sin_yaw = math.sin(yaw)
+
+        world_x = origin.position.x + cos_yaw * local_x - sin_yaw * local_y
+        world_y = origin.position.y + sin_yaw * local_x + cos_yaw * local_y
         return world_x, world_y
 
     @staticmethod
