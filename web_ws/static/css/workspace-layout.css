@@ -47,15 +47,16 @@
   .normal-camera-card, .normal-activity { padding: 18px; }
 }
 
-/* Room for the butterfly and the everyday outing scenes. */
+/* Full-card artwork with a continuous overlay, like the diary banner. */
 @media (min-width: 681px) {
-  .welcome .mascot { left: auto; right: 0; width: 62%; object-position: center; }
-  .welcome .welcome-copy { width: 46%; }
-  .welcome::before { background: linear-gradient(90deg, #fff9ec 0%, #fff9ec 34%, #fff9ecc9 43%, transparent 62%); }
+  .welcome .mascot { inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 55%; }
+  .welcome .welcome-copy { width: 58%; }
+  .idle .welcome h1 { font-size: clamp(30px, 2.5vw, 42px); line-height: 1.35; letter-spacing: -1.5px; }
+  .welcome::before { background: linear-gradient(90deg, #fff9ecf5 0%, #fff9ece6 24%, #fff9ecad 42%, #fff9ec4d 58%, #fff9ec00 76%); }
 }
-.normal-heading { position: relative; isolation: isolate; overflow: hidden; min-height: 250px; flex-wrap: wrap; justify-content: flex-start; padding-right: 60%; }
-.normal-heading::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, #fff7dc 0%, #fff7dc 30%, #fff7dca6 43%, transparent 65%); }
-.normal-heading .normal-art { position: absolute; top: 0; right: 0; width: 65%; height: 100%; object-fit: cover; object-position: center 60%; z-index: -2; }
+.normal-heading { position: relative; isolation: isolate; overflow: hidden; min-height: 250px; flex-wrap: wrap; justify-content: flex-start; padding-right: 54%; }
+.normal-heading::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, #fff7dcf5 0%, #fff7dce0 24%, #fff7dc99 42%, #fff7dc33 60%, #fff7dc00 78%); }
+.normal-heading .normal-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 58%; z-index: -2; }
 .normal-heading > div { width: 100%; }
 .normal-heading h2, .normal-heading p { word-break: keep-all; }
 .normal-heading p { line-height: 1.8; }
