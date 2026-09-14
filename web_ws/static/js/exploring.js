@@ -295,7 +295,7 @@ function renderIdle(){
           <p>익숙한 공간에도 새로운 발견이 숨어 있어요.<br>오늘은 오디와 어떤 하루를 보내볼까요?</p>
           <div class="welcome-tags"><span>탐험</span><i>·</i><span>관찰</span><i>·</i><span>기록</span></div>
         </div>
-        <img class="mascot" src="/media/illustrations/odi-home.webp" alt="햇살 아래 새로운 탐험을 기다리는 오디" width="1672" height="940" fetchpriority="high">
+        <img class="mascot" src="/media/illustrations/odi-butterfly.webp" alt="꽃밭에서 나비를 바라보는 오디" width="1672" height="941" fetchpriority="high">
       </section>
         <section class="mode-section" aria-labelledby="modeHeading">
           <div class="section-heading"><span class="section-kicker">LET’S SPEND THE DAY</span><h2 id="modeHeading">오늘은 무엇을 할까요?</h2></div>
@@ -480,7 +480,7 @@ function renderDone(){
 function renderNormal(){
   el.screen.innerHTML = `
     <section class="normal-dashboard">
-      <header class="normal-heading"><div><span class="section-kicker">ODI’S EVERYDAY</span><h2>오디와 보내는 일상</h2><p>주변을 둘러보고, 발견한 물체에 반응해요.</p></div><button class="link" id="normalStop" type="button">일반모드 종료</button></header>
+      <header class="normal-heading"><img class="normal-art" src="/media/illustrations/odi-outing.webp" alt="동네를 돌아다니다 잠든 고양이를 만난 오디" width="1672" height="941"><div><span class="section-kicker">ODI’S EVERYDAY</span><h2>오디와 보내는 일상</h2><p>주변을 둘러보고, 발견한 물체에 반응해요.</p></div><button class="link" id="normalStop" type="button">일반모드 종료</button></header>
       <div class="normal-grid">
         <section class="normal-camera-card"><h3>오디의 시야</h3><div class="photo" id="normalCam"><span>카메라 영상을 기다리고 있어요</span></div><p class="normal-camera-caption">${window.ODI_PREVIEW ? '프리뷰 예시 화면 · 실제 카메라 영상이 아닙니다.' : '실시간 카메라'}</p></section>
         <aside class="normal-activity"><span class="section-kicker">RIGHT NOW</span><h3>지금 오디는</h3><p id="normalStatus" role="status"></p><div class="normal-note">관심이 가는 물체를 만나면 잠시 멈춰 바라보고, 표정과 소리로 반응해요.</div></aside>

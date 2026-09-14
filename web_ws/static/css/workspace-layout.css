@@ -46,3 +46,23 @@
   .normal-heading { align-items: start; flex-direction: column; padding: 20px; }
   .normal-camera-card, .normal-activity { padding: 18px; }
 }
+
+/* Room for the butterfly and the everyday outing scenes. */
+@media (min-width: 681px) {
+  .welcome .mascot { left: auto; right: 0; width: 62%; object-position: center; }
+  .welcome .welcome-copy { width: 46%; }
+  .welcome::before { background: linear-gradient(90deg, #fff9ec 0%, #fff9ec 34%, #fff9ecc9 43%, transparent 62%); }
+}
+.normal-heading { position: relative; isolation: isolate; overflow: hidden; min-height: 250px; flex-wrap: wrap; justify-content: flex-start; padding-right: 60%; }
+.normal-heading::before { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, #fff7dc 0%, #fff7dc 30%, #fff7dca6 43%, transparent 65%); }
+.normal-heading .normal-art { position: absolute; top: 0; right: 0; width: 65%; height: 100%; object-fit: cover; object-position: center 60%; z-index: -2; }
+.normal-heading > div { width: 100%; }
+.normal-heading h2, .normal-heading p { word-break: keep-all; }
+.normal-heading p { line-height: 1.8; }
+@media (max-width: 680px) {
+  .normal-heading { padding: 0; gap: 0; min-height: 0; }
+  .normal-heading::before { display: none; }
+  .normal-heading .normal-art { position: static; width: 100%; height: auto; object-fit: contain; order: 3; }
+  .normal-heading > div { padding: 24px 20px 16px; }
+  .normal-heading .link { margin: 0 20px 20px; }
+}

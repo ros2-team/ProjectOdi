@@ -34,7 +34,7 @@ python preview.py
 - `static/index.html`, `static/diary.html`: 공통 로고와 내비게이션
 - `static/js/exploring.js`의 `renderIdle()`: 홈 화면 구조
 - `static/css/illustrations.css`: 페이지별 일러스트 배치와 모바일 레이아웃
-- `static/media/illustrations/odi-home.webp`: 오디_홈 → 홈
+- `static/media/illustrations/odi-butterfly.webp`: 오디_나비 → 홈
 - `static/media/illustrations/odi-observation.webp`: 오디_관찰 → 탐험
 - `static/media/illustrations/odi-reflection.webp`: 오디_노을 → 회고·일기 생성 중 및 일기 상세 제목 배경
 - `static/media/illustrations/odi-memories.webp`: 오디_기억 → 일기 목록
@@ -57,3 +57,5 @@ python preview.py
 페이지 응답, JS 문법, 일반 모드의 카메라 연결 유지, 프리뷰 예시 표시와 쓰기 요청 차단을 확인했습니다. 이번 배치 변경의 브라우저 캡처 검증은 실행 환경 제약으로 수행하지 못했습니다.
 
 첨부한 투명 배경 캐릭터는 `static/media/illustrations/odi-companion.webp`로 저장하고 공통 대기·준비·오류 화면의 캐릭터로 사용합니다. 투명도와 원본 해상도를 유지했습니다.
+
+일반 모드 상단에는 `static/media/illustrations/odi-outing.webp`(오디_마실)를 사용합니다. 모바일에서는 제목 아래에 원본 비율로 표시합니다.
