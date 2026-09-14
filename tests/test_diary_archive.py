@@ -61,7 +61,8 @@ class RouteTests(unittest.TestCase):
     def test_snapshot_survives_live_map_overwrite_and_other_session(self):
         self.save(final=True)
         old=route_archive.public('one')
-        self.png.write_bytes(b'new map'); self.save('two')
+        from PIL import Image
+        Image.new('RGB',(50,50),'blue').save(self.png); self.save('two')
         self.assertEqual(old,route_archive.public('one'))
         self.assertTrue(base64.b64decode(old['image'].split(',')[1]).startswith(b'\x89PNG'))
 
@@ -79,7 +80,7 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(len(route_archive.load('one')['segments']),2)
 
     def test_start_and_end_use_same_map_geometry(self):
-        self.save(); data=route_archive.public('one')
+        self.save(); data=route_archive.load('one')
         self.assertEqual(data['start'],self.view.to_px(1,1))
         self.assertEqual(data['end'],self.view.to_px(1.2,1.2))
 
@@ -100,6 +101,28 @@ class RouteTests(unittest.TestCase):
             data=client.get('/api/sessions/one').get_json()
             self.assertTrue(data['session']['route']['complete'])
             self.assertIsNone(client.get('/api/sessions/old').get_json()['session']['route'])
+
+    def test_png_file_contains_route_pixels_and_matches_replay(self):
+        from PIL import Image
+        from io import BytesIO
+        self.save(path=[(1,1),(1.4,1),(1.8,1)])
+        png=route_archive.archive_path('one').with_suffix('.png').read_bytes()
+        self.assertEqual(png,base64.b64decode(route_archive.public('one')['image'].split(',')[1]))
+        with Image.open(BytesIO(png)) as img:
+            colors=set(img.getdata())
+        self.assertIn((212,154,36),colors)  # Existing gold route line.
+        self.assertIn((84,139,89),colors)   # Start marker.
+        self.assertIn((199,123,40),colors)  # Last-position marker.
+
+    def test_old_vector_archive_replays_as_png(self):
+        self.save()
+        target=route_archive.archive_path('one')
+        data=route_archive.load('one');data['version']=1
+        data['image']='data:image/png;base64,'+base64.b64encode(self.png.read_bytes()).decode()
+        target.write_text(json.dumps(data))
+        replay=route_archive.public('one')
+        self.assertNotIn('segments',replay)
+        self.assertNotEqual(replay['image'],data['image'])
 
     def test_restore_reads_world_points_from_disk(self):
         self.save()

@@ -289,38 +289,17 @@ boot();
 
 function paintDiaryRoute(route){
   const frame = document.getElementById('diaryRoute');
-  if(!frame || !route) return;
-  if(!Number.isFinite(route.width) || !Number.isFinite(route.height) || route.width <= 0 || route.height <= 0 ||
-     typeof route.image !== 'string' || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(route.image)) return;
-  const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('viewBox', `0 0 ${route.width} ${route.height}`);
-  svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', '오디가 그린 지도와 실제 이동 경로. 초록색은 기록 시작, 주황색은 마지막 위치입니다.');
-  svg.style.cssText = 'display:block;width:100%;height:auto;max-height:480px;background:#f5f1e6';
-  const img = document.createElementNS(ns, 'image');
-  img.setAttribute('href', route.image);
-  img.setAttribute('width', route.width); img.setAttribute('height', route.height);
-  svg.append(img);
-  const valid = p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
-  const size = Math.max(route.width, route.height)/100;
-  for(const segment of route.segments || []){
-    if(!Array.isArray(segment) || segment.length < 2 || !segment.every(valid)) continue;
-    const line = document.createElementNS(ns, 'polyline');
-    line.setAttribute('points', segment.map(p=>p.join(',')).join(' '));
-    line.setAttribute('fill', 'none'); line.setAttribute('stroke', '#d49a24');
-    line.setAttribute('stroke-width', size*.7); line.setAttribute('stroke-linejoin', 'round');
-    line.setAttribute('stroke-linecap', 'round'); svg.append(line);
-  }
-  for(const [point, color] of [[route.start, '#548b59'], [route.end, '#c77b28']]){
-    if(!valid(point)) continue;
-    const dot = document.createElementNS(ns, 'circle');
-    dot.setAttribute('cx', point[0]); dot.setAttribute('cy', point[1]);
-    dot.setAttribute('r', size*1.3); dot.setAttribute('fill', color);
-    dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', size*.4); svg.append(dot);
-  }
+  if(!frame || !route || typeof route.image !== 'string' ||
+     !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(route.image)) return;
+  const img = document.createElement('img');
+  img.src = route.image;
+  img.alt = '오디가 그린 지도와 실제 이동 경로. 초록색은 기록 시작, 주황색은 마지막 위치입니다.';
+  img.style.cssText = 'display:block;width:100%;height:auto;max-height:480px;object-fit:contain;background:#f5f1e6';
+  img.addEventListener('error', () => {
+    frame.textContent = '이 탐험의 지도 이미지를 불러오지 못했어요.';
+  });
   const caption = document.createElement('p');
   caption.textContent = '초록 · 기록 시작  /  주황 · 마지막 위치' + (route.complete ? '' : ' · 저장된 구간까지의 기록');
   caption.style.cssText = 'text-align:center;font-size:12px;padding:12px';
-  frame.replaceChildren(svg, caption);
+  frame.replaceChildren(img, caption);
 }
