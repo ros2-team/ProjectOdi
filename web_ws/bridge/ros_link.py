@@ -24,7 +24,8 @@ app 을 import 하지 않는다 — 이 파일은 웹이 존재하는지도 모�
 # 구독하는 토픽과 화면의 대응
 #
 #   /camera/image_raw/compressed   CompressedImage       카메라 영상
-#   /odom                          Odometry              위치 (지도용)
+#   /odom                          Odometry              위치 갱신 트리거
+#   map → base_footprint TF        지도 위 실제 위치/경로
 #
 #   MissionState        →  화면 라우팅 (탐험 / 복귀 / 일기 …)
 #   BehaviorState       →  상단 큰 문구
@@ -47,6 +48,8 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import (DurabilityPolicy, QoSProfile, ReliabilityPolicy,
                        qos_profile_sensor_data)
+from rclpy.time import Time
+from tf2_ros import Buffer, TransformListener
 
 from nav_msgs.msg import OccupancyGrid, Odometry
 from sensor_msgs.msg import BatteryState, CompressedImage
@@ -141,8 +144,8 @@ class OdiBridgeNode(Node):
 
         self._disk_last = 0.0
         self._battery_last = 0.0        # 배터리 반영 스로틀
-        self._path = []                 # 지나온 좌표 [(x, y), …] 세상 좌표(미터)
-        self._pose = None               # 지금 위치 (x, y)
+        self._path = []                 # 지나온 map 좌표 [(x, y), …]
+        self._pose = None               # 지금 map 위치 (x, y)
 
         # 발견 위치. {detection_id: (x, y, action)}
         #
@@ -160,6 +163,12 @@ class OdiBridgeNode(Node):
         self._map_msg = None            # 마지막으로 받은 OccupancyGrid
         self._map_seq = 0               # PNG 를 다시 만들 때마다 +1
         self._map_last = 0.0            # 마지막 변환 시각 (스로틀용)
+
+        # 웹 경로와 지도는 반드시 같은 map 프레임을 사용한다.
+        # /odom 의 pose 를 그대로 지도에 찍으면 SLAM 재시작 때 생기는
+        # map↔odom 회전/이동 오프셋 때문에 경로가 틀어진다.
+        self._tf_buffer = Buffer()
+        self._tf_listener = TransformListener(self._tf_buffer, self)
 
         # ── 센서 ────────────────────────────────────────────
         # ★ QoS 가 맞아야 붙는다.
@@ -246,15 +255,28 @@ class OdiBridgeNode(Node):
 
     @safe
     def on_odom(self, msg):
-        """로봇 위치. 지도 위의 경로선과 현재 위치 점이 여기서 나온다.
+        """odom 수신을 트리거로 map 프레임의 로봇 위치를 기록한다.
 
-        Odometry 구조가 깊다:
-            msg.pose.pose.position.x
-                 └ PoseWithCovariance
-                      └ Pose
-                           └ Point
+        SLAM 을 새로 시작하면 map↔odom 변환은 매 미션 달라질 수 있다.
+        따라서 msg.pose.pose.position(odom 좌표)을 웹 지도에 직접 쓰지 않고
+        항상 최신 map → base_footprint TF를 읽어 경로/마커와 동일 프레임으로
+        맞춘다. PREPARING 중의 이전 TF가 경로에 섞이지 않도록 탐험/복귀 중에만
+        기록한다.
         """
-        p = msg.pose.pose.position
+        snapshot = state.snapshot()
+        if snapshot["mission"] not in ("EXPLORING", "RETURNING"):
+            return
+
+        try:
+            transform = self._tf_buffer.lookup_transform(
+                "map",
+                "base_footprint",
+                Time(),
+            )
+        except Exception:
+            return
+
+        p = transform.transform.translation
         self._pose = (p.x, p.y)
 
         # ★ 5cm 이상 움직였을 때만 기록한다.
@@ -342,6 +364,7 @@ class OdiBridgeNode(Node):
             self._session_id = msg.session_id
             self._path.clear()
             self._markers.clear()
+            self._pose = None
             self._exploring_since = None
             self._map_last = 0.0
 
