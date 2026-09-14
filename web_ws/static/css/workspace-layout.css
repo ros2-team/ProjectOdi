@@ -1,0 +1,48 @@
+/* Independent home columns prevent the status card from stretching hero rows. */
+.idle .home-main { display: flex; flex-direction: column; gap: var(--dash-gap); min-width: 0; }
+.idle > .live-card { grid-column: 2; grid-row: 1; }
+
+/* Keep camera, map and discoveries visible together on desktop. */
+@media (min-width: 981px) {
+  #exploring .status { min-height: 0; padding-top: 16px; padding-bottom: 16px; margin-bottom: 16px; }
+  #exploring .status .line h2 { font-size: 25px; }
+  #exploring .status .gauge { margin-top: 10px; }
+  #exploring .status .stop-mission { margin-top: 8px; }
+  #exploring .cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, .85fr); gap: 16px; align-items: stretch; height: clamp(280px, calc(100dvh - 300px), 680px); }
+  #exploring .cols > div:first-child { display: contents; }
+  #exploring .cam { display: flex; flex-direction: column; margin: 0; min-width: 0; min-height: 0; padding: 14px; }
+  #exploring .cam::before { content: '오디의 시야'; flex: 0 0 auto; }
+  #exploring .cam .photo { aspect-ratio: auto; flex: 1; min-height: 0; }
+  #exploring .cam .photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  #exploring .mapbox { height: 100%; min-height: 0; margin: 0; }
+  #exploring .feed { min-height: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; padding: 18px; }
+  #exploring .feed h3 { font-size: 18px; margin-bottom: 12px; }
+}
+
+.normal-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px; margin-bottom: 20px; border: 1px solid #eadfca; border-radius: 22px; background: #fff7dc; }
+.normal-heading h2 { margin: 8px 0; font-size: 28px; }
+.normal-heading p, .normal-camera-caption { font-size: 13px; color: #776e5d; }
+.normal-heading .link { flex-shrink: 0; padding: 10px 18px; border: 1px solid #ddc887; border-radius: 999px; }
+.normal-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(240px, 1fr); gap: 20px; align-items: start; }
+.normal-camera-card, .normal-activity { padding: 24px; border: 1px solid #eadfca; border-radius: 22px; background: #fffef9; min-width: 0; }
+.normal-grid h3 { margin-bottom: 18px; font-size: 20px; }
+.normal-camera-card .photo { height: clamp(220px, 43dvh, 440px); color: #7c715e; background: #f0ecdf; }
+.normal-camera-card .photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.normal-camera-caption { margin-top: 12px; }
+.normal-activity .section-kicker { margin-bottom: 10px; }
+#normalStatus { padding: 18px; background: #fff3c6; border-radius: 14px; line-height: 1.8; word-break: keep-all; }
+.normal-note { margin-top: 24px; color: #7c715e; font-size: 14px; line-height: 1.9; word-break: keep-all; }
+@media (max-width: 980px) {
+  .idle > .live-card { grid-column: 1; grid-row: auto; }
+  #exploring .cols { grid-template-columns: 1fr; }
+  #exploring .cols > div:first-child { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  #exploring .cam { margin: 0; }
+  #exploring .mapbox { height: 100%; min-height: 240px; }
+  #exploring .feed { min-height: 0; max-height: 360px; overflow-y: auto; }
+}
+@media (max-width: 680px) {
+  #exploring .cols > div:first-child, .normal-grid { grid-template-columns: 1fr; }
+  #exploring .mapbox { height: 280px; }
+  .normal-heading { align-items: start; flex-direction: column; padding: 20px; }
+  .normal-camera-card, .normal-activity { padding: 18px; }
+}

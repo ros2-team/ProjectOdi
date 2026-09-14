@@ -205,10 +205,7 @@ function paint(){
                                                          '새 지도를 만들고 출발 위치를 준비하고 있어요.');
                                          preparingSince = Date.now(); }
       else if(['NORMAL', 'NORMAL_STARTING', 'NORMAL_STOPPING'].includes(mission)) {
-        renderInterlude('일반모드', '주변을 살펴보고 있어요.');
-        const hint = document.getElementById('hint');
-        hint.innerHTML = '<p id="normalStatus"></p><img src="/camera/stream" alt="오디가 바라보는 화면" style="width:100%;max-width:640px;border-radius:16px"><p><button class="link" id="normalStop">일반모드 종료</button></p>';
-        document.getElementById('normalStop').addEventListener('click', () => normalCommand('/normal/stop'));
+        renderNormal();
       }
       else if(mission === 'REFLECTING')  renderInterlude('오늘 있었던 일을 정리하는 중',
                                                          '사진을 고르고 있어요. 잠시만요.', true);
@@ -235,7 +232,9 @@ function paint(){
       const status = document.getElementById('normalStatus');
       if(status) status.textContent = mission === 'NORMAL_STOPPING' ?
         '이동 종료와 카메라 정면 복귀를 기다리고 있어요.' :
-        ((S.normal && S.normal.detail) || labels[S.normal && S.normal.stage] || '일반모드를 준비하고 있어요');
+        ((S.normal && S.normal.detail) || labels[S.normal && S.normal.stage] ||
+          (window.ODI_PREVIEW ? '예시 · 물체를 발견하고 바라보고 있어요.' : '일반모드를 준비하고 있어요'));
+      paintNormalCamera();
       const stop = document.getElementById('normalStop');
       if(stop) stop.disabled = mission !== 'NORMAL';
     }
@@ -288,6 +287,7 @@ function renderIdle(){
 
   el.screen.innerHTML = `
     <div class="idle">
+      <div class="home-main">
       <section class="welcome">
         <div class="welcome-copy">
           <span class="section-kicker">YOUR LITTLE EXPLORER</span>
@@ -297,7 +297,6 @@ function renderIdle(){
         </div>
         <img class="mascot" src="/media/illustrations/odi-home.webp" alt="햇살 아래 새로운 탐험을 기다리는 오디" width="1672" height="940" fetchpriority="high">
       </section>
-      <div class="home-grid">
         <section class="mode-section" aria-labelledby="modeHeading">
           <div class="section-heading"><span class="section-kicker">LET’S SPEND THE DAY</span><h2 id="modeHeading">오늘은 무엇을 할까요?</h2></div>
           <div class="mode-cards">
@@ -306,13 +305,14 @@ function renderIdle(){
           </div>
           <p class="gate" id="gate" role="status">상태를 확인하는 중</p>
         </section>
+
+      <section class="memory-section"><div class="section-heading"><span class="section-kicker">LITTLE MOMENTS, BIG MEMORIES</span><h2>오디가 남긴 이야기</h2><a href="/diary">일기 모두 보기 <span aria-hidden="true">↗</span></a></div><div class="past" id="pastList"></div></section>
+      </div>
         <section class="live-card" aria-label="오디 카메라와 배터리">
           <div class="section-heading"><span class="section-kicker">ODI’S VIEW</span><h2>오디의 시선</h2></div>
           <div class="watch"><div class="lens" id="idleCam"><div class="wait">카메라 영상을 기다리고 있어요</div></div><div class="watchfoot"><span>지금 보고 있는 것</span><span class="mono" id="idleShotAt">—</span></div></div>
           <div class="vitals"><div class="vital" id="vBat"><span class="k">배터리</span><span class="v mono" id="vBatPct">—</span><span class="bar"><i id="vBatFill"></i></span></div></div>
         </section>
-      </div>
-      <section class="memory-section"><div class="section-heading"><span class="section-kicker">LITTLE MOMENTS, BIG MEMORIES</span><h2>오디가 남긴 이야기</h2><a href="/diary">일기 모두 보기 <span aria-hidden="true">↗</span></a></div><div class="past" id="pastList"></div></section>
     </div>`;
 
   document.getElementById('startBtn').addEventListener('click', startMission);
@@ -475,6 +475,31 @@ function renderDone(){
        이 화면으로 다시 돌아온다. 상태를 IDLE 로 되돌리는 요청을
        먼저 보내야 관제 화면에 갈 수 있다. */
   document.getElementById('homeBtn').addEventListener('click', goHome);
+}
+
+function renderNormal(){
+  el.screen.innerHTML = `
+    <section class="normal-dashboard">
+      <header class="normal-heading"><div><span class="section-kicker">ODI’S EVERYDAY</span><h2>오디와 보내는 일상</h2><p>주변을 둘러보고, 발견한 물체에 반응해요.</p></div><button class="link" id="normalStop" type="button">일반모드 종료</button></header>
+      <div class="normal-grid">
+        <section class="normal-camera-card"><h3>오디의 시야</h3><div class="photo" id="normalCam"><span>카메라 영상을 기다리고 있어요</span></div><p class="normal-camera-caption">${window.ODI_PREVIEW ? '프리뷰 예시 화면 · 실제 카메라 영상이 아닙니다.' : '실시간 카메라'}</p></section>
+        <aside class="normal-activity"><span class="section-kicker">RIGHT NOW</span><h3>지금 오디는</h3><p id="normalStatus" role="status"></p><div class="normal-note">관심이 가는 물체를 만나면 잠시 멈춰 바라보고, 표정과 소리로 반응해요.</div></aside>
+      </div>
+    </section>`;
+  document.getElementById('normalStop').addEventListener('click', () => normalCommand('/normal/stop'));
+  paintNormalCamera();
+}
+
+function paintNormalCamera(){
+  const camera = document.getElementById('normalCam');
+  if(!camera || camera.dataset.stream) return;
+  if(window.ODI_PREVIEW || S.camera){
+    camera.dataset.stream = '1';
+    const img = document.createElement('img');
+    img.src = window.ODI_PREVIEW ? '/preview/camera.svg' : '/camera/stream';
+    img.alt = window.ODI_PREVIEW ? '물체를 바라보는 카메라 예시' : '오디가 바라보는 화면';
+    camera.replaceChildren(img);
+  }
 }
 
 function renderInterlude(title, sub, reflection = false){
