@@ -1,0 +1,37 @@
+/* Final polish for the completed diary cover.
+   Keep the illustration composition readable while blending it smoothly into the
+   title area. Loaded after illustrations.css so this only overrides the cover. */
+
+@media (min-width: 681px) {
+  .diary-page .diary .cover {
+    padding-left: 52%;
+    background: linear-gradient(90deg, #fff4dc 0%, #fff8e9 48%, #fffaf2 72%, #fffdf8 100%);
+  }
+
+  .diary-page .diary .cover::after {
+    width: 72%;
+    /* Fill the artwork layer all the way to its right edge. The previous
+       auto 100% sizing ended the bitmap early, which exposed a vertical seam. */
+    background-position: left center;
+    background-size: 100% auto;
+    background-repeat: no-repeat;
+    -webkit-mask-image: linear-gradient(
+      90deg,
+      #000 0%,
+      #000 48%,
+      rgba(0, 0, 0, .96) 56%,
+      rgba(0, 0, 0, .76) 68%,
+      rgba(0, 0, 0, .38) 82%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      90deg,
+      #000 0%,
+      #000 48%,
+      rgba(0, 0, 0, .96) 56%,
+      rgba(0, 0, 0, .76) 68%,
+      rgba(0, 0, 0, .38) 82%,
+      transparent 100%
+    );
+  }
+}
