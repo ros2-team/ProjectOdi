@@ -211,7 +211,7 @@ function paint(){
         document.getElementById('normalStop').addEventListener('click', () => normalCommand('/normal/stop'));
       }
       else if(mission === 'REFLECTING')  renderInterlude('오늘 있었던 일을 정리하는 중',
-                                                         '사진을 고르고 있어요. 잠시만요.');
+                                                         '사진을 고르고 있어요. 잠시만요.', true);
       else if(mission === 'RESETTING')  renderInterlude('다음 탐험을 준비하고 있어요',
                                                          '진행 중인 행동을 마무리하고 있어요. 잠시만 기다려 주세요.');
       else if(mission === 'ERROR'){
@@ -295,7 +295,7 @@ function renderIdle(){
           <p>익숙한 공간에도 새로운 발견이 숨어 있어요.<br>오늘은 오디와 어떤 하루를 보내볼까요?</p>
           <div class="welcome-tags"><span>탐험</span><i>·</i><span>관찰</span><i>·</i><span>기록</span></div>
         </div>
-        <img class="mascot" src="/media/odi-companion.svg" alt="호기심 가득한 눈으로 바라보는 오디" width="480" height="430">
+        <img class="mascot" src="/media/illustrations/odi-home.webp" alt="햇살 아래 새로운 탐험을 기다리는 오디" width="1672" height="940" fetchpriority="high">
       </section>
       <div class="home-grid">
         <section class="mode-section" aria-labelledby="modeHeading">
@@ -477,9 +477,10 @@ function renderDone(){
   document.getElementById('homeBtn').addEventListener('click', goHome);
 }
 
-function renderInterlude(title, sub){
+function renderInterlude(title, sub, reflection = false){
   el.screen.innerHTML = `
-    <div class="interlude">
+    <div class="interlude${reflection ? ' reflection-scene' : ''}">
+      ${reflection ? '<img class="reflection-art" src="/media/illustrations/odi-reflection.webp" alt="강변에서 노을을 바라보며 하루를 돌아보는 오디" width="1672" height="941">' : ''}
       <div class="dots"><i></i><i></i><i></i></div>
       <h2>${title}</h2>
       <p>${sub}</p>
@@ -840,3 +841,4 @@ setInterval(() => {
    그전에 그리면 초기값 기준의 엉뚱한 화면이 잠깐 스친다. */
 if(FORCED) paint();     // ?screen=... 로 강제한 경우만 즉시 그린다
 connect();
+

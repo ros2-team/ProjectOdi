@@ -80,7 +80,7 @@ async function renderList(){
     if(!Array.isArray(items)) throw new Error('목록을 확인할 수 없어요.');
   }catch(e){ return renderError('일기를 불러오지 못했어요.', e.message); }
   page.innerHTML = `
-    <section class="journal-intro"><div><span class="section-kicker">ODI’S LITTLE MEMORIES</span><h1>작은 발견이 모여,<br>오디의 이야기가 돼요.</h1><p>함께 지나온 공간과 호기심 가득했던 순간들을 만나보세요.</p></div><img src="/media/odi-companion.svg" alt="" width="200" height="180"></section>
+    <section class="journal-intro"><div><span class="section-kicker">ODI’S LITTLE MEMORIES</span><h1>작은 발견이 모여,<br>오디의 이야기가 돼요.</h1><p>함께 지나온 공간과 호기심 가득했던 순간들을 만나보세요.</p></div><img src="/media/illustrations/odi-memories.webp" alt="별빛 아래 도시를 바라보는 오디" width="1671" height="941" fetchpriority="high"></section>
     <div class="journal-heading"><h2>탐험 일기</h2><span>총 ${items.length}편의 이야기</span></div>
     ${items.length ? `<div class="journal-grid">${items.map(item => `
       <a class="journal-card" href="/diary/${encodeURIComponent(item.id)}">
@@ -102,7 +102,8 @@ function render(s, obs){
      2 초마다 다시 확인해서 준비되면 자동으로 일기로 바뀐다. */
   if(s.diary_status === 'generating'){
     page.innerHTML = `
-      <div class="interlude">
+      <div class="interlude reflection-scene">
+        <img class="reflection-art" src="/media/illustrations/odi-reflection.webp" alt="강변에서 노을을 바라보는 오디" width="1672" height="941">
         <div class="dots"><i></i><i></i><i></i></div>
         <h2>오늘 있었던 일을 정리하는 중</h2>
         <p>사진을 고르고 있어요. 잠시만요.</p>
@@ -293,4 +294,5 @@ function renderError(title, detail){
 
 
 boot();
+
 
