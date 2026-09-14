@@ -142,7 +142,10 @@ class MappingSupervisor(Node):
 
     def wait_ready(self, session, cutoff):
         deadline = time.monotonic() + self.ready_timeout
+        lifecycle_names = ('bt_navigator', 'planner_server', 'controller_server')
         checks = None
+        checks_started_at = None
+        lifecycle_state_text = 'not requested'
         last_log = 0.0
 
         while rclpy.ok() and time.monotonic() < deadline:
@@ -154,12 +157,41 @@ class MappingSupervisor(Node):
             lifecycle_ready = all(c.service_is_ready() for c in self.lifecycle)
             if checks is None and lifecycle_ready:
                 checks = [c.call_async(GetState.Request()) for c in self.lifecycle]
+                checks_started_at = time.monotonic()
+                lifecycle_state_text = 'request pending'
 
             active = False
-            if checks is not None and all(f.done() for f in checks):
-                active = all(f.result() is not None and f.result().current_state.id == 3 for f in checks)
-                if not active:
+            if checks is not None:
+                if all(f.done() for f in checks):
+                    state_parts = []
+                    state_ids = []
+                    for name, future in zip(lifecycle_names, checks):
+                        try:
+                            result = future.result()
+                            state_id = None if result is None else result.current_state.id
+                            state_label = 'no response' if result is None else result.current_state.label
+                        except Exception as error:
+                            state_id = None
+                            state_label = f'error:{error}'
+                        state_ids.append(state_id)
+                        state_parts.append(f'{name}={state_label}')
+
+                    active = all(state_id == 3 for state_id in state_ids)
+                    lifecycle_state_text = ', '.join(state_parts)
+                    if not active:
+                        # Nav2 is still transitioning. Request a fresh snapshot on
+                        # the next loop instead of reusing results from startup.
+                        checks = None
+                        checks_started_at = None
+                elif (checks_started_at is not None
+                      and time.monotonic() - checks_started_at >= 1.0):
+                    # A service request can be sent just before the old Nav2
+                    # process disappears during restart. Such a Future may never
+                    # complete even after the replacement node is ACTIVE. Drop
+                    # that stale snapshot and retry against the current nodes.
+                    lifecycle_state_text = 'request timeout; retrying'
                     checks = None
+                    checks_started_at = None
 
             message = self.latest_map
             publisher_count = self.count_publishers('/map')
@@ -204,6 +236,7 @@ class MappingSupervisor(Node):
                     f'map_ready={map_ready}, '
                     f'lifecycle_services={lifecycle_ready}, '
                     f'nav2_active={active}, '
+                    f'lifecycle_states=[{lifecycle_state_text}], '
                     f'navigate_to_pose={action_ready}, '
                     f'tf_found={tf_found}, '
                     f'tf_stamp_after_cutoff={tf_stamp_after_cutoff}, '
