@@ -133,6 +133,8 @@ def label_to_dict(lab):
     }
 
 
+from bridge import route_archive
+
 class OdiBridgeNode(Node):
 
     def __init__(self):
@@ -357,6 +359,11 @@ class OdiBridgeNode(Node):
         SLAM 지도 자체는 유지하며 RESET 완료는 ROS 보고로 확인한다.
         """
         prev = state.snapshot()["mission"]
+        if prev in ('EXPLORING', 'RETURNING') and (
+                msg.state not in ('EXPLORING', 'RETURNING')
+                or msg.session_id != self._session_id):
+            # Flush while the old session still owns the map and trail.
+            self.render_map(force=True, final=msg.state in ('REFLECTING', 'COMPLETED'))
         if not state.apply_mission_report(msg.state, msg.session_id):
             return
         state.patch(mission_detail=getattr(msg, 'detail', ''))
@@ -364,6 +371,9 @@ class OdiBridgeNode(Node):
             self._map_msg = None
             self._session_id = msg.session_id
             self._path.clear()
+            saved_route = route_archive.load(msg.session_id)
+            if saved_route and not saved_route.get('complete'):
+                self._path.extend(saved_route.get('world_path', []))
             self._markers.clear()
             self._pose = None
             self._exploring_since = None
@@ -420,13 +430,13 @@ class OdiBridgeNode(Node):
                 f"res={msg.info.resolution}")
         self._map_msg = msg
 
-    def render_map(self):
+    def render_map(self, force=False, final=False):
         """OccupancyGrid → PNG + 좌표 변환. on_tick 이 주기적으로 부른다."""
         if self._map_msg is None:
             return
 
         now = time.time()
-        if now - self._map_last < config.MAP_THROTTLE_SEC:
+        if not force and now - self._map_last < config.MAP_THROTTLE_SEC:
             return
         self._map_last = now
 
@@ -446,6 +456,13 @@ class OdiBridgeNode(Node):
         state.patch(map=mapper.build_state(
             view, self._map_seq, self._path, self._pose,
             list(self._markers.values())))
+        snapshot = state.snapshot()
+        if snapshot['mission'] in ('EXPLORING', 'RETURNING'):
+            try:
+                route_archive.save(snapshot['session_id'], view, MAP_PNG,
+                                   self._path, self._pose, final=final)
+            except Exception as error:
+                self.get_logger().error(f'탐험 지도 보관 실패: {error}')
 
     def on_tick(self):
         """1 초마다. 명령 배출 → 지도 변환 → 경과 시간.

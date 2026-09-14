@@ -167,12 +167,12 @@ function render(s, obs){
 
       ${skipped.length ? `<p class="passed">${passedLine(skipped)}</p>` : ''}
 
-      <p class="said-big close">${d.closing || closingFallback(s)}</p>
+      ${d.closing ? `<p class="said-big close">${d.closing}</p>` : ''}
 
       <div class="route">
         <h3>오늘 다닌 길</h3>
-        <div class="frame">
-          <div class="wait">지도는 아직 준비 중이에요</div>
+        <div class="frame" id="diaryRoute">
+          <div class="wait">이 탐험의 지도 기록이 없어요.</div>
         </div>
       </div>
 
@@ -183,6 +183,7 @@ function render(s, obs){
 
     </article>`;
 
+  paintDiaryRoute(s.route);
   bindHome();
 }
 
@@ -227,18 +228,6 @@ function passedLine(skipped){
   const names = [...new Set(skipped.map(nameOf))];
   const list = names.join('와 ');
   return `그 밖에 ${list}도 지나쳤지만, 이미 잘 아는 것들이라 눈길만 주고 지나갔다.`;
-}
-
-
-/* AI 가 닫는 문장을 못 만들었을 때의 대체 문구.
-
-   ★ ended_by 로 갈린다
-     의욕을 다 써서 끝난 것과 시간이 다 돼서 끝난 것은
-     Odi 의 기분이 다르다. 공짜로 얻는 캐릭터라 살려 쓴다. */
-function closingFallback(s){
-  return s.ended_by === 'TIME_LIMIT'
-    ? '아직 더 보고 싶었는데,<br>시간이 다 됐다.'
-    : '돌아오는 길은 금방이었다.<br>오늘은 실컷 돌아다녔다.';
 }
 
 
@@ -296,3 +285,42 @@ function renderError(title, detail){
 boot();
 
 
+
+
+function paintDiaryRoute(route){
+  const frame = document.getElementById('diaryRoute');
+  if(!frame || !route) return;
+  if(!Number.isFinite(route.width) || !Number.isFinite(route.height) || route.width <= 0 || route.height <= 0 ||
+     typeof route.image !== 'string' || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(route.image)) return;
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${route.width} ${route.height}`);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', '오디가 그린 지도와 실제 이동 경로. 초록색은 기록 시작, 주황색은 마지막 위치입니다.');
+  svg.style.cssText = 'display:block;width:100%;height:auto;max-height:480px;background:#f5f1e6';
+  const img = document.createElementNS(ns, 'image');
+  img.setAttribute('href', route.image);
+  img.setAttribute('width', route.width); img.setAttribute('height', route.height);
+  svg.append(img);
+  const valid = p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
+  const size = Math.max(route.width, route.height)/100;
+  for(const segment of route.segments || []){
+    if(!Array.isArray(segment) || segment.length < 2 || !segment.every(valid)) continue;
+    const line = document.createElementNS(ns, 'polyline');
+    line.setAttribute('points', segment.map(p=>p.join(',')).join(' '));
+    line.setAttribute('fill', 'none'); line.setAttribute('stroke', '#d49a24');
+    line.setAttribute('stroke-width', size*.7); line.setAttribute('stroke-linejoin', 'round');
+    line.setAttribute('stroke-linecap', 'round'); svg.append(line);
+  }
+  for(const [point, color] of [[route.start, '#548b59'], [route.end, '#c77b28']]){
+    if(!valid(point)) continue;
+    const dot = document.createElementNS(ns, 'circle');
+    dot.setAttribute('cx', point[0]); dot.setAttribute('cy', point[1]);
+    dot.setAttribute('r', size*1.3); dot.setAttribute('fill', color);
+    dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', size*.4); svg.append(dot);
+  }
+  const caption = document.createElement('p');
+  caption.textContent = '초록 · 기록 시작  /  주황 · 마지막 위치' + (route.complete ? '' : ' · 저장된 구간까지의 기록');
+  caption.style.cssText = 'text-align:center;font-size:12px;padding:12px';
+  frame.replaceChildren(svg, caption);
+}

@@ -1,6 +1,7 @@
 """Read-only diary queries for the ODI web application."""
 
 import html
+import json
 from pathlib import Path
 
 import pymysql
@@ -24,6 +25,19 @@ def _connect():
         autocommit=True,
         connect_timeout=5,
     )
+
+
+def diary_parts(value):
+    """Read new structured diaries and legacy plain text without rewriting either."""
+    text = value or ''
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        return text, ''
+    if (isinstance(data, dict) and data.get('format') == 'odi.diary.v2'
+            and all(isinstance(data.get(k), str) for k in ('opening', 'closing'))):
+        return data['opening'], data['closing']
+    return text, ''
 
 
 def _web_text(value):
@@ -72,7 +86,7 @@ def list_sessions():
             "id": record["session_id"],
             "date": _format_datetime(record["started_at"], "%m.%d"),
             "line": html.escape(
-                next(iter((record["diary_text"] or "").splitlines()), "")
+                next(iter(diary_parts(record["diary_text"])[0].splitlines()), "")
             ),
             "date_full": _format_datetime(record["started_at"], "%Y.%m.%d"),
             "photo_url": _photo_url(record.get("representative_image_path")),
@@ -125,6 +139,7 @@ def get_session(session_id):
         )
 
     diary_text = record["diary_text"] or ""
+    opening, closing = diary_parts(diary_text)
     diary_status = (
         "ready"
         if diary_text
@@ -150,9 +165,9 @@ def get_session(session_id):
         "observed_count": int(record["observed_count"] or 0),
         "diary_status": diary_status,
         "diary": {
-            "opening": _web_text(diary_text),
+            "opening": _web_text(opening),
             "entries": entries,
-            "closing": "",
+            "closing": _web_text(closing),
         },
     }
 

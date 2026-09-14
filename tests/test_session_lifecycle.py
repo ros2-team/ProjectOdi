@@ -60,7 +60,8 @@ reflection_module = load_classes(
     SRC / 'odi_reflection/odi_reflection/odi_reflection_node.py',
     Reflect=NS(Result=NS, Feedback=NS),
     GetMissionObservations=NS(Request=NS), SaveDiary=NS(Request=NS))
-bridge_module = load_classes(ROOT / 'web_ws/bridge/ros_link.py', state=state)
+bridge_module = load_classes(ROOT / 'web_ws/bridge/ros_link.py', state=state,
+                             route_archive=NS(load=lambda session:None))
 
 
 class MissionStateTests(unittest.TestCase):
@@ -313,15 +314,15 @@ class ReflectionTests(unittest.TestCase):
     def execute(self):
         return asyncio.run(self.node.execute_callback(self.goal))
 
-    def test_empty_observations_save_factual_diary_without_model(self):
+    def test_empty_observations_generate_and_save_diary(self):
         result = self.execute()
         self.assertTrue(result.success)
         self.goal.succeed.assert_called_once()
-        self.node.generate_diary_with_openai.assert_not_called()
+        self.node.generate_diary_with_openai.assert_called_once_with([])
         request = self.node.save_diary_client.requests[0]
         self.assertEqual(request.session_id, 'one')
-        self.assertIn('기록이 없었어', request.diary_text)
-        self.assertEqual(request.model_name, 'template:no_observations')
+        self.assertEqual('Generated diary', request.diary_text)
+        self.assertEqual(request.model_name, 'configured-model')
 
     def test_regular_diary_still_uses_model(self):
         self.node.get_observations_client.response.observations = [object()]

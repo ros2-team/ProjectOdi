@@ -51,7 +51,7 @@ from flask_sock import Sock
 from werkzeug.exceptions import NotFound
 
 import config
-from bridge import commands, frames, state
+from bridge import commands, frames, state, route_archive
 
 if config.USE_FAKE:
     from bridge import diary_fake as diary_source
@@ -149,6 +149,12 @@ def create_app():
         if s is None:
             return jsonify(error="not found"), 404
 
+        s = dict(s)
+        if config.USE_FAKE:
+            from bridge.route_preview import sample_route
+            s['route'] = sample_route()
+        else:
+            s['route'] = route_archive.public(session_id)
         return jsonify({
             "session": s,
             "observations": diary_source.get_observations(session_id),
