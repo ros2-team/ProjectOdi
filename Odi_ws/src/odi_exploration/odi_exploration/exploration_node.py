@@ -26,6 +26,7 @@ from odi_interfaces.msg import MissionState
 from std_msgs.msg import String
 
 from odi_exploration.frontier_detector import FrontierDetector
+from odi_exploration.roam_corridor import RoamCorridor
 from odi_exploration.navigation_manager import (
     NavigationManager,
     NavigationOutcome,
@@ -537,12 +538,13 @@ class ExplorationNode(Node):
         robot_yaw: float,
         short: bool = False,
     ) -> tuple[str, PoseStamped] | None:
-        """Choose a safe cell with useful distance and heading continuity."""
+        """Choose an open local corridor, avoiding goals behind walls."""
         map_message = self._get_latest_map()
         width = map_message.info.width
         height = map_message.info.height
         data = map_message.data
         candidates = []
+        corridor = RoamCorridor(map_message, self.obstacle_clearance)
         step = max(1, int(self.roam_sampling_step))
 
         minimum = 0.5 if short else self.roam_minimum_goal_distance
@@ -552,14 +554,6 @@ class ExplorationNode(Node):
                 index = cell_y * width + cell_x
                 if data[index] != FrontierDetector.FREE:
                     continue
-                if not self._cell_has_clearance(
-                    map_message,
-                    cell_x,
-                    cell_y,
-                    allow_unknown=False,
-                ):
-                    continue
-
                 world_x, world_y = FrontierDetector.cell_to_world(
                     cell_x,
                     cell_y,
@@ -576,6 +570,10 @@ class ExplorationNode(Node):
                 ):
                     continue
                 if self._was_attempted(world_x, world_y):
+                    continue
+
+                openness = corridor.score(robot_x, robot_y, world_x, world_y)
+                if openness is None:
                     continue
 
                 target_distance = (
@@ -605,6 +603,7 @@ class ExplorationNode(Node):
                     distance_score
                     + self.roam_direction_weight
                     * heading_score
+                    + 1.2 * openness
                 )
                 candidates.append(
                     (score, cell_x, cell_y, world_x, world_y)
@@ -621,6 +620,10 @@ class ExplorationNode(Node):
             robot_x,
             robot_y,
         )
+        self.get_logger().info(
+            f'Roam corridor selected: {area_id}, distance='
+            f'{math.hypot(world_x-robot_x, world_y-robot_y):.2f} m, '
+            f'openness={corridor.score(robot_x, robot_y, world_x, world_y):.2f}')
         return area_id, pose
 
     def _get_latest_map(self) -> OccupancyGrid:
