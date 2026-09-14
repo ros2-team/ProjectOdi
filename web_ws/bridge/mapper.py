@@ -46,6 +46,8 @@ crop 범위가 탐험이 진행되며 계속 바뀌는데 프론트는 그걸 �
 # │ 결과가 가는 곳 : static/media/map.png  +  state.map
 # └────────────────────────────────────────────────────────────
 
+import math
+
 import numpy as np
 from PIL import Image
 
@@ -69,6 +71,13 @@ class MapView:
         self.res = info.resolution                  # 셀 하나가 몇 미터인가
         self.origin_x = info.origin.position.x      # 그리드 왼쪽아래의 세상 좌표
         self.origin_y = info.origin.position.y
+        q = info.origin.orientation
+        self.origin_yaw = math.atan2(
+            2.0 * (q.w * q.z + q.x * q.y),
+            1.0 - 2.0 * (q.y * q.y + q.z * q.z),
+        )
+        self.cos_yaw = math.cos(self.origin_yaw)
+        self.sin_yaw = math.sin(self.origin_yaw)
         self.grid_h = info.height                   # 자르기 전 세로 셀 수
         self.crop_x0 = int(crop_x0)                 # 잘라낸 만큼의 offset
         self.crop_y0 = int(crop_y0)
@@ -76,14 +85,21 @@ class MapView:
         self.height = int(height)
 
     def to_px(self, x, y):
-        """세상 좌표(미터) → PNG 안의 픽셀 좌표.
+        """map 좌표(미터) → PNG 안의 픽셀 좌표.
 
-        1) 원점을 빼고 해상도로 나눠 셀 번호를 구한다
-        2) y 를 뒤집는다 (ROS 는 위로, 이미지는 아래로 증가)
-        3) 잘라낸 만큼 빼준다
+        OccupancyGrid origin 은 위치뿐 아니라 회전도 가진 Pose 다.
+        먼저 origin 기준의 grid 로컬 좌표로 역회전한 뒤 셀 번호를 구한다.
+        그 다음 y 를 뒤집고 crop offset 을 뺀다.
         """
-        col = (x - self.origin_x) / self.res
-        row = self.grid_h - (y - self.origin_y) / self.res      # ← flipud 대응
+        dx = x - self.origin_x
+        dy = y - self.origin_y
+
+        # world(map) -> occupancy-grid local frame (inverse yaw rotation)
+        local_x = self.cos_yaw * dx + self.sin_yaw * dy
+        local_y = -self.sin_yaw * dx + self.cos_yaw * dy
+
+        col = local_x / self.res
+        row = self.grid_h - local_y / self.res      # ← flipud 대응
 
         # ★ float() 로 감싸는 이유
         #   numpy 값이 섞여 들어오면 np.float64 가 되는데,
@@ -113,8 +129,8 @@ def render(msg, out_path):
 
     # ── 2) 회색조 이미지로 ─────────────────────────────────
     img = np.full(grid.shape, COLOR_UNKNOWN, dtype=np.uint8)
-    img[grid == 0] = COLOR_FREE
-    img[grid > OCCUPIED_THRESHOLD] = COLOR_WALL
+    img[(grid >= 0) & (grid < OCCUPIED_THRESHOLD)] = COLOR_FREE
+    img[grid >= OCCUPIED_THRESHOLD] = COLOR_WALL
 
     # ── 3) y 뒤집기 ★ 이 줄을 빼먹으면 마커가 엉뚱한 곳에 찍힌다 ──
     img = np.flipud(img)
