@@ -159,6 +159,21 @@ class NormalModeNode(Node):
                 self.head.get('session_id') == self.session and
                 self.head.get('ready') is True)
 
+    def startup_problem(self):
+        if not self.head_seen or time.monotonic()-self.head_seen >= 1.0:
+            return '머리 제어 응답이 없어요. SBC의 head_bridge 실행과 ROS 연결을 확인해 주세요.'
+        if self.head.get('enabled') is False:
+            return '머리 제어가 비활성화되어 있어요. head_bridge의 enabled 설정을 확인해 주세요.'
+        if self.head.get('connected') is False:
+            return '머리 제어 보드에 연결하지 못했어요. USB 포트와 접근 권한을 확인해 주세요.'
+        if self.head.get('session_id') != self.session:
+            return '머리 제어기의 모드 정보가 일치하지 않아요. MissionState 수신을 확인해 주세요.'
+        if self.head.get('ready') is not True:
+            return '머리 제어 보드가 준비되지 않았어요. 펌웨어와 보드 상태를 확인해 주세요.'
+        if not self.stationary():
+            return '로봇의 정지 상태를 확인하지 못했어요. odom 수신과 실제 움직임을 확인해 주세요.'
+        return ''
+
     def set_stage(self, stage: str, duration: float = 0.0):
         self.stage = stage
         self.deadline = time.monotonic()+duration
@@ -171,8 +186,9 @@ class NormalModeNode(Node):
 
     def fault(self, detail):
         if not self.stop_requested:
-            self.fault_detail = detail
-            self.event('FAULT', detail)
+            self.fault_detail = '[NORMAL_FAULT] ' + detail
+            self.get_logger().error('Normal mode fault: ' + detail)
+            self.event('FAULT', self.fault_detail)
         self.stop_requested = True
 
     def head_command(self, pan, tilt, beep=0):
@@ -247,7 +263,7 @@ class NormalModeNode(Node):
             if now-self.last_status > .5:
                 msg = String()
                 msg.data = json.dumps(dict(session_id=self.session, stage=self.stage,
-                                          detail=self.fault_detail))
+                                          detail=self.fault_detail or (self.startup_problem() if self.stage == 'WAIT_HEAD' else '')))
                 self.status_pub.publish(msg)
                 self.last_status = now
             if self.stop_requested:
@@ -258,7 +274,7 @@ class NormalModeNode(Node):
                     self.home()
                     self.set_stage('HOMING', 5)
                 elif now > self.deadline:
-                    self.fault('Head bridge/firmware or stationary odometry not ready')
+                    self.fault(self.startup_problem() or '일반모드 준비 시간이 초과되었어요.')
                 return
             if not self.head_ready():
                 self.fault('Head bridge disconnected or firmware disabled')

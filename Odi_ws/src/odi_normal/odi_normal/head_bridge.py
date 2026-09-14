@@ -170,7 +170,8 @@ class HeadBridge(Node):
             self.ready = False
             self.done = ''
         msg = String()
-        msg.data = json.dumps(dict(ready=self.ready and now-self.last_rx < 1,
+        msg.data = json.dumps(dict(enabled=self.enabled, connected=self.connection is not None,
+                                   ready=self.ready and now-self.last_rx < 1,
                                    session_id=self.session,
                                    pan=self.pan, tilt=self.tilt, busy=self.busy, done=self.done))
         self.publisher.publish(msg)

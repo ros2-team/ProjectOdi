@@ -359,6 +359,7 @@ class OdiBridgeNode(Node):
         prev = state.snapshot()["mission"]
         if not state.apply_mission_report(msg.state, msg.session_id):
             return
+        state.patch(mission_detail=getattr(msg, 'detail', ''))
         if msg.session_id != self._session_id:
             self._map_msg = None
             self._session_id = msg.session_id

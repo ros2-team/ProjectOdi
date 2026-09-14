@@ -225,14 +225,14 @@ function paint(){
     if(mission === 'IDLE')           paintIdle();
     else if(mission === 'PREPARING') paintPreparing();
     else if(['NORMAL', 'NORMAL_STARTING', 'NORMAL_STOPPING'].includes(mission)) {
-      const labels = {WAIT_HEAD:'카메라 연결을 확인하고 있어요', HOMING:'카메라를 정면으로 맞추고 있어요',
+      const labels = {WAIT_HEAD:'머리 제어 연결과 로봇 정지 상태를 확인하고 있어요', HOMING:'카메라를 정면으로 맞추고 있어요',
         REST:'잠시 쉬고 있어요', MOVING:'가까운 곳을 둘러보고 있어요', BRAKING:'물체를 바라보려고 멈추고 있어요',
         TRACKING:'물체를 바라보고 있어요', NOD_DOWN:'관심을 표현하고 있어요', NOD_UP:'관심을 표현하고 있어요',
         RETURN_HEAD:'다시 주변을 살펴볼 준비를 해요', STOPPING:'멈추고 카메라를 정면으로 돌리고 있어요'};
       const status = document.getElementById('normalStatus');
       if(status) status.textContent = mission === 'NORMAL_STOPPING' ?
-        '이동 종료와 카메라 정면 복귀를 기다리고 있어요.' :
-        ((S.normal && S.normal.detail) || labels[S.normal && S.normal.stage] ||
+        (S.mission_detail?.startsWith('[NORMAL_FAULT] ') ? S.mission_detail.replace('[NORMAL_FAULT] ', '') : '이동 종료와 카메라 정면 복귀를 기다리고 있어요.') :
+        ((S.normal && S.normal.detail && S.normal.detail.replace('[NORMAL_FAULT] ', '')) || labels[S.normal && S.normal.stage] ||
           (window.ODI_PREVIEW ? '예시 · 물체를 발견하고 바라보고 있어요.' : '일반모드를 준비하고 있어요'));
       paintNormalCamera();
       const stop = document.getElementById('normalStop');
@@ -384,7 +384,9 @@ function paintIdle(){
   document.getElementById('normalBtn').disabled = blocked;
   el.startBtn.textContent = '탐험 보내기';
 
-  if(!b){
+  if(S.mission_detail?.startsWith('[NORMAL_FAULT] ')){
+    el.gate.textContent = '일반모드가 중단됐어요. ' + S.mission_detail.replace('[NORMAL_FAULT] ', '');
+  }else if(!b){
     el.gate.textContent = '배터리를 아직 못 읽었어요. 그래도 나갈 수는 있어요.';
   }else if(blocked){
     el.gate.textContent = b.charging
