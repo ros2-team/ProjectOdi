@@ -36,7 +36,7 @@ python preview.py
 - `static/css/illustrations.css`: 페이지별 일러스트 배치와 모바일 레이아웃
 - `static/media/illustrations/odi-home.webp`: 오디_홈 → 홈
 - `static/media/illustrations/odi-observation.webp`: 오디_관찰 → 탐험
-- `static/media/illustrations/odi-reflection.webp`: 오디_노을 → 회고 및 일기 생성 중
+- `static/media/illustrations/odi-reflection.webp`: 오디_노을 → 회고·일기 생성 중 및 일기 상세 제목 배경
 - `static/media/illustrations/odi-memories.webp`: 오디_기억 → 일기 목록
 
 `.gitignore`는 일러스트 폴더만 추적하도록 예외를 두고, 로봇 촬영 파일은 기존처럼 제외합니다.
@@ -55,3 +55,5 @@ python preview.py
 홈 왼쪽 카드들은 독립된 세로 열로 배치해 오른쪽 상태 카드 높이에 따른 공백을 제거했습니다. 데스크톱(981px 이상) 탐험 화면은 카메라·지도·발견 기록을 3열로 표시하고 높이를 창에 맞춥니다. 발견이 많으면 해당 카드 내부에서 스크롤합니다. 작은 화면은 2열 또는 1열로 전환합니다.
 
 페이지 응답, JS 문법, 일반 모드의 카메라 연결 유지, 프리뷰 예시 표시와 쓰기 요청 차단을 확인했습니다. 이번 배치 변경의 브라우저 캡처 검증은 실행 환경 제약으로 수행하지 못했습니다.
+
+첨부한 투명 배경 캐릭터는 `static/media/illustrations/odi-companion.webp`로 저장하고 공통 대기·준비·오류 화면의 캐릭터로 사용합니다. 투명도와 원본 해상도를 유지했습니다.

@@ -115,7 +115,7 @@ button:focus-visible,a:focus-visible,[tabindex]:focus-visible,.idle .start:focus
 .blk .shot img { object-fit:contain; }
 .blk p { font-size:17px; line-height:2; }
 .interlude { padding:40px 24px; border:1px solid #EAE2CD; background:#FFFEF9; border-radius:22px; }
-.interlude::before { content:""; display:block; width:180px; height:156px; background:url('/media/odi-companion.svg') center/contain no-repeat; margin-bottom:16px; }
+.interlude::before { content:""; display:block; width:200px; height:250px; background:url('/media/illustrations/odi-companion.webp') center/contain no-repeat; margin-bottom:16px; }
 .interlude h2 { font-family:var(--ui); font-weight:500; font-size:26px; }
 .interlude .dots { margin-bottom:18px; }
 .interlude .hint { color:#756D5E; max-width:100%; }
@@ -168,3 +168,4 @@ button:focus-visible,a:focus-visible,[tabindex]:focus-visible,.idle .start:focus
  .site-footer { margin:0 18px; flex-direction:column; gap:4px; }
 }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } }
+
