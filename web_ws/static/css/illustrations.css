@@ -31,10 +31,18 @@
 .journal-intro .section-kicker { color: #ffe08a; }
 .journal-intro p { color: #e3e8ee; line-height: 1.9; }
 
-.interlude.reflection-scene { max-width: 940px; margin: 0 auto; padding: 0 0 36px; overflow: hidden; }
-.interlude.reflection-scene::before { display: none; }
-.reflection-art { display: block; width: 100%; height: auto; aspect-ratio: 1672 / 941; object-fit: contain; margin: 0 0 28px; border-radius: 20px; }
-.reflection-scene h2, .reflection-scene p { padding-left: 20px; padding-right: 20px; word-break: keep-all; }
+/* REFLECTING is a loading/interlude state too. Use the same companion artwork
+   as PREPARING/RESETTING instead of the large reflection scene. */
+.interlude.reflection-scene {
+  max-width: none;
+  margin: 0;
+  padding: 40px 24px;
+  overflow: visible;
+}
+.interlude.reflection-scene::before { display: block; }
+.reflection-art { display: none; }
+.reflection-scene h2,
+.reflection-scene p { padding-left: 0; padding-right: 0; word-break: keep-all; }
 
 @media (max-width: 1180px) and (min-width: 981px) {
   .idle .welcome { padding: 28px 24px; }
@@ -54,7 +62,6 @@
   .journal-intro::before { display: none; }
   .journal-intro > div { width: 100%; padding: 28px 24px; }
   .journal-intro img { display: block; position: static; width: 100%; height: auto; aspect-ratio: 1671 / 941; object-fit: contain; }
-  .reflection-art { border-radius: 14px; }
 }
 
 /* The sunset becomes the title backdrop on each completed diary. */
