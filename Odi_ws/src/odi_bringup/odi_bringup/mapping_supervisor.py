@@ -143,32 +143,49 @@ class MappingSupervisor(Node):
     def wait_ready(self, session, cutoff):
         deadline = time.monotonic() + self.ready_timeout
         checks = None
+        last_log = 0.0
+
         while rclpy.ok() and time.monotonic() < deadline:
             if not self.authorized(session):
                 raise RuntimeError('Fresh-map preparation canceled')
             if any(p.process is None or p.process.poll() is not None for p in (self.slam, self.nav)):
                 raise RuntimeError('SLAM or Nav2 exited during preparation')
-            if checks is None and all(c.service_is_ready() for c in self.lifecycle):
+
+            lifecycle_ready = all(c.service_is_ready() for c in self.lifecycle)
+            if checks is None and lifecycle_ready:
                 checks = [c.call_async(GetState.Request()) for c in self.lifecycle]
+
             active = False
             if checks is not None and all(f.done() for f in checks):
                 active = all(f.result() is not None and f.result().current_state.id == 3 for f in checks)
                 if not active:
                     checks = None
+
             message = self.latest_map
-            if self.count_publishers('/map') > 1:
+            publisher_count = self.count_publishers('/map')
+            if publisher_count > 1:
                 raise RuntimeError('Multiple map publishers; stop the separately launched SLAM')
+
             map_ready = (message is not None and message.info.width > 0 and message.info.height > 0
                          and Time.from_msg(message.header.stamp).nanoseconds >= cutoff
                          and any(0 <= cell < 50 for cell in message.data))
-            if map_ready and active and self.navigation.server_is_ready():
+            action_ready = self.navigation.server_is_ready()
+
+            tf_found = False
+            tf_stamp_after_cutoff = False
+            tf_age = None
+            tf_error = None
+
+            if map_ready and active and action_ready:
                 try:
                     frame = self.get_parameter('map_frame').value
                     transform = self.tf_buffer.lookup_transform(
                         frame, self.get_parameter('robot_frame').value, Time())
+                    tf_found = True
                     stamp = Time.from_msg(transform.header.stamp).nanoseconds
-                    age = (self.get_clock().now().nanoseconds-stamp)*1e-9
-                    if stamp >= cutoff and 0 <= age <= 1.0:
+                    tf_age = (self.get_clock().now().nanoseconds-stamp)*1e-9
+                    tf_stamp_after_cutoff = stamp >= cutoff
+                    if tf_stamp_after_cutoff and 0 <= tf_age <= 1.0:
                         pose = PoseStamped()
                         pose.header.frame_id = frame
                         pose.header.stamp = transform.header.stamp
@@ -176,9 +193,29 @@ class MappingSupervisor(Node):
                         pose.pose.position.y = transform.transform.translation.y
                         pose.pose.orientation = copy.deepcopy(transform.transform.rotation)
                         return pose
-                except Exception:
-                    pass
+                except Exception as error:
+                    tf_error = str(error)
+
+            now = time.monotonic()
+            if now - last_log >= 2.0:
+                age_text = 'n/a' if tf_age is None else f'{tf_age:.3f}s'
+                self.get_logger().info(
+                    'Preparation check: '
+                    f'map_ready={map_ready}, '
+                    f'lifecycle_services={lifecycle_ready}, '
+                    f'nav2_active={active}, '
+                    f'navigate_to_pose={action_ready}, '
+                    f'tf_found={tf_found}, '
+                    f'tf_stamp_after_cutoff={tf_stamp_after_cutoff}, '
+                    f'tf_age={age_text}, '
+                    f'map_publishers={publisher_count}'
+                )
+                if tf_error is not None:
+                    self.get_logger().warn(f'TF lookup failed: {tf_error}')
+                last_log = now
+
             time.sleep(0.1)
+
         raise RuntimeError('Fresh map, current TF or active Nav2 did not become ready in time')
 
 
