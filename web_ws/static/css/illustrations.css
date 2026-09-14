@@ -64,32 +64,54 @@
   .journal-intro img { display: block; position: static; width: 100%; height: auto; aspect-ratio: 1671 / 941; object-fit: contain; }
 }
 
-/* The sunset becomes the title backdrop on each completed diary. */
+/* Completed diary cover: keep the original illustration composition instead of
+   zooming it to fill the whole card, then fade it into the title area. */
 .diary-page .diary .cover {
-  min-height: 300px;
-  padding: 36px 24px 36px 42%;
-  margin-bottom: 30px;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 320px;
+  box-sizing: border-box;
+  padding: 40px 34px 40px 50%;
+  margin-bottom: 34px;
   border: 1px solid #eadfca;
   border-radius: 20px;
-  background-color: #fff3d8;
-  background-image: linear-gradient(90deg, transparent 10%, #fff8e34d 35%, #fff8e3e8 62%, #fff8e3f5 100%), url('/media/illustrations/odi-reflection.webp');
-  background-size: cover;
-  background-position: center 58%;
+  background: linear-gradient(90deg, #fff2d4 0%, #fff6e2 48%, #fffaf0 72%, #fffdf8 100%);
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
 }
-.diary-page .diary .cover::before { color: #72572e; line-height: 1.7; }
+.diary-page .diary .cover::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: 0 auto 0 0;
+  width: 64%;
+  background: url('/media/illustrations/odi-reflection.webp') left center / auto 100% no-repeat;
+  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 72%, rgba(0,0,0,.55) 84%, transparent 100%);
+  mask-image: linear-gradient(90deg, #000 0%, #000 72%, rgba(0,0,0,.55) 84%, transparent 100%);
+  pointer-events: none;
+}
+.diary-page .diary .cover > * { position: relative; z-index: 2; }
+.diary-page .diary .cover::before { position: relative; z-index: 2; color: #72572e; line-height: 1.7; }
 .diary-page .diary .cover .d { color: #66533c; line-height: 1.8; }
 .diary-page .diary .cover h1 { color: #352f28; margin: 14px 0 20px; }
 .diary-page .diary .cover .stats { gap: 8px; }
 .diary-page .diary .cover .stats span { background: #fffdf2e8; color: #66533c; border: 1px solid #e5d6b4; }
 @media (max-width: 680px) {
   .diary-page .diary .cover {
-    min-height: 310px;
-    padding: 28px 18px;
-    background-image: linear-gradient(#fff8e3cf, #fff8e3dc), url('/media/illustrations/odi-reflection.webp');
-    background-position: 35% center;
+    min-height: 0;
+    padding: 220px 18px 28px;
+    background: #fff7e7;
+  }
+  .diary-page .diary .cover::after {
+    inset: 0 0 auto 0;
+    width: 100%;
+    height: 195px;
+    background-position: center center;
+    background-size: auto 100%;
+    -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 72%, rgba(0,0,0,.5) 88%, transparent 100%);
+    mask-image: linear-gradient(180deg, #000 0%, #000 72%, rgba(0,0,0,.5) 88%, transparent 100%);
   }
 }
