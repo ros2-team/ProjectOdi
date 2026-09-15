@@ -78,7 +78,10 @@ class HeadBridge(Node):
         if self.mission == 'NORMAL':
             if now-self.normal_at >= 3:
                 return 6
-            return {'REST': 1, 'MOVING': 2, 'BRAKING': 3, 'TRACKING': 3,
+            return {'REST': 1, 'DEPARTING': 2, 'MOVING': 2, 'BRAKING': 3, 'TRACKING': 3,
+                    'SCAN_LEFT': 3, 'SCAN_RIGHT': 3, 'SCAN_CENTER': 3,
+                    'LOOK_LEFT': 3, 'LOOK_RIGHT': 3, 'LOOK_CENTER': 3,
+                    'DISCOVERED': 4, 'DISCOVERY_PAUSE': 4,
                     'NOD_DOWN': 4, 'NOD_UP': 4, 'STOPPING': 5}.get(self.normal_stage, 0)
         if self.mission == 'ERROR':
             return 6
@@ -190,3 +193,4 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+

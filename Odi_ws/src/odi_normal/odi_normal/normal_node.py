@@ -14,7 +14,7 @@ from sensor_msgs.msg import BatteryState
 from rclpy.qos import qos_profile_sensor_data
 from odi_interfaces.msg import MissionState, DetectedObject
 from odi_interfaces.action import Explore
-from odi_normal.attention import Attention, tracking_angles
+from odi_normal.attention import Attention
 
 
 class NormalParameters(TypedDict):
@@ -148,11 +148,6 @@ class NormalModeNode(Node):
         if not msg.detection_id.startswith(self.session + ':'):
             return
         self.attention.observe(msg, now)
-        if self.target is not None and msg.detection_id == self.target.detection_id:
-            # Do not let another object of the same class replace the current target.
-            if msg.confidence >= self.p['confidence']:
-                self.target = msg
-                self.target_seen = now
 
     def head_ready(self):
         return (time.monotonic()-self.head_seen < 1.0 and
@@ -206,6 +201,19 @@ class NormalModeNode(Node):
 
     def head_done(self):
         return self.head_ready() and self.head.get('done') == self.head_id
+
+    def scan(self, side, beep=0):
+        # Fixed +/-25 degree sweep, bounded by the calibrated servo limits.
+        offset = {'LEFT': -25.0, 'RIGHT': 25.0, 'CENTER': 0.0}[side]
+        pan = max(self.p['pan_min'], min(self.p['pan_max'], self.p['pan_home'] + offset))
+        self.head_command(pan, self.p['tilt_home'], beep)
+        self.set_stage('SCAN_' + side, 5)
+
+    def discover(self, target, now):
+        # Celebrate once at the current angle; no continuous object tracking.
+        self.attention.handled_target(target, now)
+        self.head_command(float(self.head['pan']), float(self.head['tilt']), 3)
+        self.set_stage('DISCOVERED', 5)
 
     def nav_pending(self):
         return self.send_future is not None or self.goal is not None
@@ -291,66 +299,61 @@ class NormalModeNode(Node):
             elif self.stage == 'REST':
                 target = self.attention.candidate(now)
                 if target:
-                    self.target, self.target_seen = target, now
-                    self.set_stage('TRACKING', self.p['track_timeout_sec'])
+                    self.discover(target, now)
                 elif now > self.deadline:
                     if not self.nav.server_is_ready():
                         self.fault('Exploration action server is unavailable')
                         return
+                    # One phrase announces departure, while still stationary.
+                    self.head_command(self.p['pan_home'], self.p['tilt_home'], 1)
+                    self.set_stage('DEPARTING', 5)
+            elif self.stage == 'DEPARTING':
+                if self.head_done():
                     request = Explore.Goal()
                     request.session_id, request.mode = self.session, 'SHORT_ROAM'
                     self.send_future = self.nav.send_goal_async(request)
                     self.set_stage('MOVING', self.p['move_timeout_sec'])
+                elif now > self.deadline:
+                    self.fault('Departure acknowledgement timed out')
             elif self.stage == 'MOVING':
-                target = self.attention.candidate(now)
-                if target or now > self.deadline or not self.nav_pending():
-                    self.target = target
-                    self.target_seen = now
+                if self.attention.candidate(now) or now > self.deadline or not self.nav_pending():
                     self.set_stage('BRAKING', 10)
                     self.cancel_navigation()
             elif self.stage == 'BRAKING':
                 self.cancel_navigation()
                 if not self.nav_pending() and self.stationary():
-                    if self.target and now-self.target_seen < 1:
-                        self.set_stage('TRACKING', self.p['track_timeout_sec'])
-                    else:
-                        self.home()
-                        self.set_stage('RETURN_HEAD', 5)
+                    # Never turn the camera until navigation has terminated.
+                    self.scan('LEFT', 2)
                 elif now > self.deadline:
                     self.fault('Waiting for navigation termination and base stop')
-            elif self.stage == 'TRACKING':
-                if now-self.target_seen > .8 or now > self.deadline:
-                    self.attention.handled_target(self.target, now)
-                    self.home()
-                    self.set_stage('RETURN_HEAD', 5)
-                    return
-                if not self.head_done():
-                    return
-                pan, tilt, centered = tracking_angles(self.target,
-                    self.p['image_width'], self.p['image_height'],
-                    float(self.head['pan']), float(self.head['tilt']),
-                    self.p['pan_sign'], self.p['tilt_sign'],
-                    (self.p['pan_min'], self.p['pan_max']),
-                    (self.p['tilt_min'], self.p['tilt_max']))
-                if centered:
-                    self.attention.handled_target(self.target, now)
-                    self.expression_pan, self.expression_tilt = pan, tilt
-                    self.head_command(pan, min(self.p['tilt_max'], tilt+self.p['nod_degrees']), 2)
-                    self.set_stage('NOD_DOWN', 5)
-                else:
-                    self.head_command(pan, tilt)
-            elif self.stage == 'NOD_DOWN':
+            elif self.stage.startswith('SCAN_'):
                 if self.head_done():
-                    self.head_command(self.expression_pan, self.expression_tilt)
-                    self.set_stage('NOD_UP', 5)
+                    # Admit only stable detections collected after the head settles.
+                    self.attention.samples.clear()
+                    self.attention.latest = None
+                    self.set_stage('LOOK_' + self.stage[5:], 1.5)
                 elif now > self.deadline:
-                    self.fault('Head expression acknowledgement timed out')
-            elif self.stage == 'NOD_UP':
+                    self.fault('Camera scan acknowledgement timed out')
+            elif self.stage.startswith('LOOK_'):
+                target = self.attention.candidate(now)
+                if target:
+                    self.discover(target, now)
+                elif now > self.deadline:
+                    side = self.stage[5:]
+                    if side == 'LEFT':
+                        self.scan('RIGHT')
+                    elif side == 'RIGHT':
+                        self.scan('CENTER')
+                    else:
+                        self.set_stage('REST', self.p['rest_sec'])
+            elif self.stage == 'DISCOVERED':
                 if self.head_done():
-                    self.home()
-                    self.set_stage('RETURN_HEAD', 5)
+                    self.set_stage('DISCOVERY_PAUSE', 1.2)
                 elif now > self.deadline:
-                    self.fault('Head expression acknowledgement timed out')
+                    self.fault('Discovery acknowledgement timed out')
+            elif self.stage == 'DISCOVERY_PAUSE' and now > self.deadline:
+                self.home()
+                self.set_stage('RETURN_HEAD', 5)
         except Exception as error:
             self.fault(str(error))
 
@@ -372,3 +375,4 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+

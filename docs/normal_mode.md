@@ -189,3 +189,34 @@ PC용 Servo/Serial 스텁은 실제 하드웨어 피드백을 검증하지 않�
 참고한 공식 API:
 [Arduino Servo](https://docs.arduino.cc/libraries/servo/),
 [ROS2 Humble 액션](https://docs.ros.org/en/humble/Concepts/Basic/About-Actions.html).
+
+## 2026-09-15: short roaming and looking around
+
+Normal mode now repeats REST → DEPARTING → MOVING → BRAKING →
+SCAN_LEFT/LOOK_LEFT → SCAN_RIGHT/LOOK_RIGHT → SCAN_CENTER/LOOK_CENTER → REST.
+Navigation must finish/cancel and odometry must confirm a stationary base before
+scanning. Each camera move waits for its matching completion acknowledgement.
+The camera sweeps 25 degrees either side of its calibrated home (clamped to limits)
+and pauses 1.5 seconds at each position for stable detections.
+
+A fresh admitted object triggers DISCOVERED → DISCOVERY_PAUSE → RETURN_HEAD → REST.
+It reacts at the current camera angle and does not continuously track the object.
+Existing class/confidence/area/stability filters and per-class cooldown remain.
+Detections collected during a camera sweep are cleared at the start of each pause.
+
+Existing firmware beep counts are used without a serial protocol change:
+1 phrase before short roaming, 2 phrases at the start of looking around, 3 phrases
+on discovery. These are different repeat patterns of the existing voice-like sound,
+not three newly composed melodies. No Arduino upload is required if the current
+odi_head firmware already supports beep counts 0..3.
+
+Deploy on PC: pull test/assambly4 and rebuild odi_normal, then restart the project
+and web. Copy the updated odi_normal package into ~/odi_head_ws/src on the Pi and
+rebuild it there to update LCD stage mappings; restart the existing head bridge.
+Keep exactly one head bridge owning the Arduino port. Do not add a manual bridge
+while the robot launcher already runs one.
+
+Offline tests cover departure acknowledgement, scan/stop interlocks, a complete
+left/right/center cycle, discovery without tracking, cooldown and stale detections.
+Actual servo movement, buzzer audibility and driving still require a robot test.
+
