@@ -2,7 +2,8 @@
 // Pins and motion limits calibrated on Odi; upload moves the head to 84/65.
 // Protocol at 115200: P -> S enabled pan tilt busy
 // M sequence pan tilt beepCount -> D sequence after commanded motion + settle.
-// Sound IDs: 0 silent, 1 departure, 2 scan, 3 legacy, 4 surprise, 5 hum, 6 goodbye.
+// B soundID plays sound only, without changing servo state or refreshing its watchdog.
+// Sound IDs: 7 arrival, 0 silent, 1 departure, 2 scan, 3 legacy, 4 surprise, 5 hum, 6 goodbye.
 // D is commanded completion, NOT encoder feedback (ordinary servos have none).
 #include <Servo.h>
 #include <avr/pgmspace.h>
@@ -43,7 +44,7 @@ void stopTalk() {
 void startTalk(int count) {
   // A silent follow-up servo command must not cut off a bounded phrase.
   // H / watchdog home explicitly stops all sound.
-  if (count <= 0 || count > 6 || BUZZER_PIN < 0) return;
+  if (count <= 0 || count > 7 || BUZZER_PIN < 0) return;
   stopTalk();
   soundPreset = count == 3 ? 0 : count;
   talksLeft = soundPreset ? 1 : count; talkStep = 0; talkVariant = 0; talking = true;
@@ -56,7 +57,7 @@ void updateTalk() {
   unsigned long elapsed = now - talkStarted;
   if (soundPreset) {
     const unsigned long duration = soundPreset == 1 ? 300 : soundPreset == 2 ? 720
-        : soundPreset == 4 ? 180 : soundPreset == 5 ? 1200 : 600;
+        : soundPreset == 4 ? 180 : soundPreset == 5 ? 1200 : soundPreset == 7 ? 700 : 600;
     if (elapsed >= duration) { stopTalk(); return; }
     if (now - talkUpdated < 10) return;
     talkUpdated = now;
@@ -74,6 +75,9 @@ void updateTalk() {
     } else if (soundPreset == 5) {
       hz = elapsed < 400 ? 420 + 100L * elapsed / 400
           : 520 - 80L * (elapsed - 400) / 800;  // "Hmm"
+    } else if (soundPreset == 7) {
+      // Arrival: a calm descending resolution.
+      hz = elapsed < 220 ? 660 : elapsed < 270 ? 0 : elapsed < 470 ? 520 : 440;
     } else {
       // Goodbye: two gently falling phrases, distinct from departure.
       if (elapsed < 220) hz = 780 - 120L * elapsed / 220;
@@ -174,6 +178,15 @@ void home() {
   stopTalk();
 }
 void command() {
+  if (input[0] == 'B') {
+    int sound; char extra;
+    if (sscanf(input, "B %d %c", &sound, &extra) != 1 || !enabled || sound < 1 || sound > 7) {
+      Serial.println("E sound_invalid"); return;
+    }
+    startTalk(sound);
+    Serial.println("B OK");
+    return; // No motor target, sequence, active flag or lastContact changes.
+  }
   if (input[0] == 'L') {
     int requested; char tail;
     if (sscanf(input, "L %d %c", &requested, &tail) != 1 || requested < 0 || requested >= FACE_COUNT) {
@@ -263,4 +276,5 @@ void loop() {
   drawFace();
   updateTalk();
 }
+
 

@@ -235,3 +235,32 @@ left/right/center cycle, bounded tracking, target loss, cooldown and stale detec
 Actual servo movement, buzzer audibility and driving still require a robot test.
 
 
+
+
+## Exploration sound cues (2026-09-15)
+
+- PREPARING → EXPLORING: departure (1), once per actual mission transition.
+- FIRST_ENCOUNTER RUNNING: discovery (4), once on entering the behavior.
+- OBSERVE RUNNING: thoughtful observation (5), once on entering the behavior.
+- Successful observation completion / resume: goodbye (6), once per completed object.
+  Failed or skipped observations do not play a success cue.
+- RETURNING → REFLECTING: arrival (7), a calm 700ms descending phrase.
+
+BehaviorExecutor emits best-effort JSON on /head/sound (id, session_id, sound).
+HeadBridge accepts only current EXPLORING session events with fresh hardware/mission
+status, deduplicates IDs, and writes B soundID to the Uno. Mission cues originate
+from the bridge's observed transitions; periodic MissionState/BehaviorState reports
+never replay them. Disconnected hardware skips cues without stopping exploration.
+No history replay or retries: missed expressions do not pile up after reconnecting.
+
+Firmware B changes only the buzzer. It does not change servo targets, sequence,
+active motion, M/D acknowledgement state, or the motor watchdog contact timestamp.
+Existing M commands remain restricted to normal mode. Sound ID 7 is B-only.
+The pre-existing H command on mission changes is unchanged.
+
+Deployment (alongside the normal-mode sound/tracking update): update PC
+odi_behavior_executor, odi_normal and odi_bringup; update Pi odi_normal; upload
+firmware/odi_head/odi_head.ino to the Uno. Only one bridge may own the Uno serial port.
+Offline regressions verify deduplication, session/mode checks, observation success
+handling, publication failure isolation, and sound-only firmware motor isolation.
+Physical buzzer sound and timing during an actual exploration remain to be tested.

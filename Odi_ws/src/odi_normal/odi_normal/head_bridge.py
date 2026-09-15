@@ -34,16 +34,19 @@ class HeadBridge(Node):
         self.pending = None
         self.done = ''
         self.recent = deque(maxlen=32)
+        self.sound_recent = deque(maxlen=64)
         self.ready = False
         self.pan = self.tilt = 90
         self.busy = False
         self.publisher = self.create_publisher(String, '/head/state', 10)
         self.create_subscription(String, '/head/command', self.command, 10)
+        self.create_subscription(String, '/head/sound', self.sound_command, 10)
         self.create_subscription(MissionState, '/mission/state', self.on_mission, 10)
         self.create_subscription(String, '/normal/status', self.on_normal, 10)
         self.create_timer(.05, self.tick)
 
     def on_mission(self, msg):
+        previous_mission, previous_session = self.mission, self.session
         if msg.session_id != self.session:
             self.normal_stage = ''
             self.normal_at = 0.
@@ -55,6 +58,40 @@ class HeadBridge(Node):
                     pass
         self.mission, self.session = msg.state, msg.session_id
         self.mission_at = time.monotonic()
+        # Only actual transitions: repeated heartbeats/reconnects cannot replay cues.
+        if msg.session_id and msg.session_id == previous_session:
+            if previous_mission == 'PREPARING' and msg.state == 'EXPLORING':
+                self.play_sound(1)
+            elif previous_mission == 'RETURNING' and msg.state == 'REFLECTING':
+                self.play_sound(7)
+
+    def play_sound(self, sound):
+        # B never changes servo goals, pending M/D acknowledgement, or motor lease.
+        if (self.connection is None or not self.enabled or not self.ready
+                or time.monotonic()-self.last_rx >= 1
+                or time.monotonic()-self.mission_at >= 3):
+            return
+        try:
+            self.write(f'B {sound}')
+        except (serial.SerialException, OSError, RuntimeError) as error:
+            self.get_logger().warning('Sound skipped: ' + str(error))
+
+    def sound_command(self, msg):
+        try:
+            request = json.loads(msg.data)
+            if not isinstance(request, dict):
+                return
+            identifier, sound = request.get('id'), request.get('sound')
+            if (self.mission != 'EXPLORING' or not self.session
+                    or request.get('session_id') != self.session
+                    or not isinstance(identifier, str) or not 1 <= len(identifier) <= 64
+                    or type(sound) is not int or sound not in (4, 5, 6)
+                    or identifier in self.sound_recent):
+                return
+            self.sound_recent.append(identifier)
+            self.play_sound(sound)
+        except (ValueError, TypeError):
+            pass
 
     def write(self, line):
         if self.connection is None:
@@ -193,5 +230,6 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+
 
 

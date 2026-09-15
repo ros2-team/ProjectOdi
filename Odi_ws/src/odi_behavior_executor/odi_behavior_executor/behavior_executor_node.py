@@ -1,5 +1,8 @@
 
 from enum import Enum
+import json
+import uuid
+from std_msgs.msg import String
 
 import rclpy
 from rclpy.node import Node
@@ -155,6 +158,8 @@ class BehaviorExecutorNode(Node):
             "/observation/result",
             10,
         )
+
+        self.sound_publisher = self.create_publisher(String, '/head/sound', 10)
 
         #현재 행동 상태 발행
         self.behavior_state_publisher = self.create_publisher(
@@ -355,6 +360,9 @@ class BehaviorExecutorNode(Node):
             self.get_logger().info(
                 f"Object processing completed : {current_object.detection_id}"
             )
+        if (current_object is not None
+                and self.blackboard.current_stage == ObjectProcessStage.OBSERVATION_COMPLETED):
+            self.publish_sound(6)
         self.blackboard.current_object = None
         self.blackboard.current_stage = (
             ObjectProcessStage.NONE
@@ -1987,6 +1995,7 @@ class BehaviorExecutorNode(Node):
             behavior != self.current_behavior
         )
         previous_behavior = self.current_behavior
+        entering_running = (behavior_changed or self.current_status != BehaviorStatus.RUNNING)
 
         self.current_behavior = behavior
         self.current_status = status
@@ -1997,7 +2006,23 @@ class BehaviorExecutorNode(Node):
                 "\n::Behavior changed::\n"
                 f"{previous_behavior.value} -> {behavior.value}"
             )
+        if entering_running and status == BehaviorStatus.RUNNING:
+            cue = {BehaviorName.FIRST_ENCOUNTER: 4, BehaviorName.OBSERVE: 5}.get(behavior)
+            if cue is not None:
+                self.publish_sound(cue)
         self.publish_current_behavior()
+
+    def publish_sound(self, sound):
+        # Optional expression must never block or fail the exploration action.
+        try:
+            if self.blackboard.mission_state != 'EXPLORING' or not self.blackboard.session_id:
+                return
+            msg = String()
+            msg.data = json.dumps(dict(id=uuid.uuid4().hex,
+                                       session_id=self.blackboard.session_id, sound=sound))
+            self.sound_publisher.publish(msg)
+        except Exception as error:
+            self.get_logger().warning('Exploration sound skipped: ' + str(error))
 
     def publish_current_behavior(self) -> None:
         msg = BehaviorState()
@@ -2044,3 +2069,4 @@ def main(args=None) -> None:
 
 if __name__ == "__main__":
     main()
+

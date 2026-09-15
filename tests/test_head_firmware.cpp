@@ -106,5 +106,26 @@ int main() {
     for (const auto& previous : patterns) assert(previous!=toneFrequencies);
     patterns.push_back(toneFrequencies);
   }
+  // Sound-only B must not touch a pending servo command or its watchdog lease.
+  Serial.incoming="P\nM 30 100 70 0\n"; loop();
+  unsigned long motionContact=lastContact, motionSequence=sequence;
+  int motionPan=targetPan, motionTilt=targetTilt;
+  bool motionActive=active;
+  for (int sound : {1, 4, 5, 6, 7}) {
+    fakeTime+=1;
+    Serial.incoming="B " + std::to_string(sound) + "\n"; loop();
+    assert(lastContact==motionContact && sequence==motionSequence);
+    assert(targetPan==motionPan && targetTilt==motionTilt && active==motionActive);
+    assert(soundPreset==sound);
+  }
+  Serial.incoming="B 8\n"; loop();
+  assert(Serial.output.find("E sound_invalid") != std::string::npos);
+  for (int i=0; i<140; ++i) { fakeTime+=10; loop(); }
+  assert(Serial.output.find("D 30") != std::string::npos);
+  // Even repeated sound requests cannot extend the motor watchdog.
+  fakeTime=motionContact+2101;
+  Serial.incoming="B 7\n"; loop();
+  assert(targetPan==PAN_HOME && targetTilt==TILT_HOME && !talking);
 }
+
 

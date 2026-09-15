@@ -7,7 +7,8 @@
   <maintainer email="kws991108@gmail.com">ssu4645</maintainer>
   <license>TODO: License declaration</license>
 
-  <depend>rcply</depend>
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
   <depend>odi_interfaces</depend>
 
   <test_depend>ament_copyright</test_depend>
@@ -19,3 +20,4 @@
     <build_type>ament_python</build_type>
   </export>
 </package>
+
