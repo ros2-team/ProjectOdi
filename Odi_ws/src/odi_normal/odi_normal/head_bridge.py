@@ -81,7 +81,7 @@ class HeadBridge(Node):
             return {'REST': 1, 'DEPARTING': 2, 'MOVING': 2, 'BRAKING': 3, 'TRACKING': 3,
                     'SCAN_LEFT': 3, 'SCAN_RIGHT': 3, 'SCAN_CENTER': 3,
                     'LOOK_LEFT': 3, 'LOOK_RIGHT': 3, 'LOOK_CENTER': 3,
-                    'DISCOVERED': 4, 'DISCOVERY_PAUSE': 4,
+                    'DISCOVERED': 4, 'DISCOVERY_PAUSE': 4, 'GOODBYE': 4,
                     'NOD_DOWN': 4, 'NOD_UP': 4, 'STOPPING': 5}.get(self.normal_stage, 0)
         if self.mission == 'ERROR':
             return 6
@@ -104,7 +104,7 @@ class HeadBridge(Node):
             pan, tilt = float(request['pan']), float(request['tilt'])
             beep = int(request.get('beep', 0))
             if not (math.isfinite(pan) and math.isfinite(tilt)
-                    and 0 <= pan <= 180 and 0 <= tilt <= 180 and 0 <= beep <= 3):
+                    and 0 <= pan <= 180 and 0 <= tilt <= 180 and 0 <= beep <= 6):
                 return
             # Firmware enforces calibrated limits too; out-of-range requests are rejected.
             self.serial_sequence += 1
@@ -193,4 +193,5 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+
 

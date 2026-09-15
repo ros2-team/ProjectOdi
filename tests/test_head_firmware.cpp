@@ -53,8 +53,8 @@ int main() {
   lcd.fail=true;
   fakeTime+=20; Serial.incoming="L 0\n"; loop();
   assert(!lcdReady);
-  Serial.incoming="M 9 84 65 2\n"; loop();
-  assert(sequence==9 && talksLeft==2); // Missing LCD cannot disable sound.
+  Serial.incoming="M 9 84 65 3\n"; loop();
+  assert(sequence==9 && talksLeft==3); // Missing LCD cannot disable sound.
   for (int i=0; i<15; ++i) {fakeTime+=10; loop();}
   Serial.incoming="M 10 90 65 0\n"; loop();
   assert(talking); // Following movement does not truncate speech.
@@ -73,4 +73,38 @@ int main() {
   Serial.incoming="M 12 90 70 3\n"; loop();
   fakeTime+=2100; loop();
   assert(!talking && targetPan==PAN_HOME); // Watchdog cancels speech too.
+  // New sounds are bounded, non-blocking, and preserve the existing M/D protocol.
+  toneFrequencies.clear();
+  Serial.incoming="M 20 84 65 4\n"; loop();
+  assert(soundPreset==4 && talking);
+  for (int i=0; i<20; ++i) { fakeTime+=10; loop(); }
+  assert(!talking && !toneActive);
+  assert(!toneFrequencies.empty());
+  assert(toneFrequencies.front() < toneFrequencies.back());
+  Serial.incoming="M 21 90 65 5\n"; loop();
+  assert(soundPreset==5 && talking);
+  for (int i=0; i<40; ++i) { fakeTime+=10; loop(); }
+  Serial.incoming="M 22 93 65 0\n"; loop();
+  assert(talking); // Silent tracking steps must preserve the hum.
+  for (int i=0; i<90; ++i) { fakeTime+=10; loop(); }
+  assert(!talking && panAngle==93);
+  assert(Serial.output.find("D 22") != std::string::npos);
+  Serial.incoming="M 23 84 65 7\n"; loop();
+  assert(sequence==22); // Unknown sound cannot start a move.
+  Serial.incoming="M 24 84 65 5\n"; loop();
+  Serial.incoming="H\n"; loop();
+  assert(!talking && !toneActive);
+  // Every situation has a different pitch sequence, not just a repeat count.
+  std::vector<std::vector<int>> patterns;
+  for (int preset : {1, 2, 4, 5, 6}) {
+    toneFrequencies.clear();
+    Serial.incoming="P\n"; loop();
+    startTalk(preset);
+    for (int i=0; i<125; ++i) { fakeTime+=10; loop(); }
+    assert(!talking && !toneActive);
+    assert(!toneFrequencies.empty());
+    for (const auto& previous : patterns) assert(previous!=toneFrequencies);
+    patterns.push_back(toneFrequencies);
+  }
 }
+

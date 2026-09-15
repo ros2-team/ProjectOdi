@@ -230,8 +230,8 @@ function paint(){
         DEPARTING:'가까운 곳으로 마실 나갈 준비를 해요',
         SCAN_LEFT:'잠깐 멈춰 왼쪽을 둘러보고 있어요', SCAN_RIGHT:'오른쪽도 둘러보고 있어요', SCAN_CENTER:'다시 정면을 둘러보고 있어요',
         LOOK_LEFT:'왼쪽에 무엇이 있는지 살펴보고 있어요', LOOK_RIGHT:'오른쪽에 무엇이 있는지 살펴보고 있어요', LOOK_CENTER:'앞에 무엇이 있는지 살펴보고 있어요',
-        DISCOVERED:'관심 가는 물체를 발견했어요!', DISCOVERY_PAUSE:'발견이 반가워 잠시 머물고 있어요',
-        TRACKING:'물체를 바라보고 있어요', NOD_DOWN:'관심을 표현하고 있어요', NOD_UP:'관심을 표현하고 있어요',
+        GOODBYE:'안녕! 다시 마실을 나가요', DISCOVERED:'엇! 관심 가는 물체를 발견했어요!', DISCOVERY_PAUSE:'발견이 반가워 잠시 머물고 있어요',
+        TRACKING:'음~ 발견한 물체를 따라 바라보고 있어요', NOD_DOWN:'관심을 표현하고 있어요', NOD_UP:'관심을 표현하고 있어요',
         RETURN_HEAD:'다시 주변을 살펴볼 준비를 해요', STOPPING:'멈추고 카메라를 정면으로 돌리고 있어요'};
       const status = document.getElementById('normalStatus');
       if(status) status.textContent = mission === 'NORMAL_STOPPING' ?
@@ -489,7 +489,7 @@ function renderNormal(){
       <header class="normal-heading"><img class="normal-art" src="/media/illustrations/odi-outing.webp" alt="동네를 돌아다니다 잠든 고양이를 만난 오디" width="1672" height="941"><div><span class="section-kicker">ODI’S EVERYDAY</span><h2>오디와 보내는 일상</h2><p>주변을 둘러보고, 발견한 물체에 반응해요.</p></div><button class="link" id="normalStop" type="button">일반모드 종료</button></header>
       <div class="normal-grid">
         <section class="normal-camera-card"><h3>오디의 시야</h3><div class="photo" id="normalCam"><span>카메라 영상을 기다리고 있어요</span></div><p class="normal-camera-caption">${window.ODI_PREVIEW ? '프리뷰 예시 화면 · 실제 카메라 영상이 아닙니다.' : '실시간 카메라'}</p></section>
-        <aside class="normal-activity"><span class="section-kicker">RIGHT NOW</span><h3>지금 오디는</h3><p id="normalStatus" role="status"></p><div class="normal-note">짧게 돌아다니다 멈춰 좌우를 둘러봐요. 관심 가는 물체를 발견하면 표정과 소리로 반가움을 표현해요.</div></aside>
+        <aside class="normal-activity"><span class="section-kicker">RIGHT NOW</span><h3>지금 오디는</h3><p id="normalStatus" role="status"></p><div class="normal-note">짧게 돌아다니다 멈춰 좌우를 둘러봐요. 물체를 발견하면 반갑게 소리 내고, 잠시 따라 바라봐요.</div></aside>
       </div>
     </section>`;
   document.getElementById('normalStop').addEventListener('click', () => normalCommand('/normal/stop'));
@@ -872,5 +872,6 @@ setInterval(() => {
    그전에 그리면 초기값 기준의 엉뚱한 화면이 잠깐 스친다. */
 if(FORCED) paint();     // ?screen=... 로 강제한 경우만 즉시 그린다
 connect();
+
 
 

@@ -14,7 +14,7 @@ from sensor_msgs.msg import BatteryState
 from rclpy.qos import qos_profile_sensor_data
 from odi_interfaces.msg import MissionState, DetectedObject
 from odi_interfaces.action import Explore
-from odi_normal.attention import Attention
+from odi_normal.attention import Attention, tracking_angles
 
 
 class NormalParameters(TypedDict):
@@ -44,7 +44,7 @@ class NormalModeNode(Node):
         defaults = NormalParameters(image_width=320, image_height=240,
                         target_classes=['bottle', 'backpack', 'cup'],
                         confidence=0.6, minimum_area_ratio=0.02, cooldown_sec=60.0,
-                        rest_sec=8.0, move_timeout_sec=30.0, track_timeout_sec=6.0,
+                        rest_sec=3.0, move_timeout_sec=30.0, track_timeout_sec=6.0,
                         pan_sign=-1.0, tilt_sign=1.0,
                         pan_min=40.0, pan_max=140.0, tilt_min=0.0, tilt_max=100.0,
                         pan_home=84.0, tilt_home=65.0, nod_degrees=6.0)
@@ -148,6 +148,15 @@ class NormalModeNode(Node):
         if not msg.detection_id.startswith(self.session + ':'):
             return
         self.attention.observe(msg, now)
+        # Cooldown suppresses new discoveries, but must not freeze the active target.
+        if (self.target is not None and msg.detection_id == self.target.detection_id
+                and msg.class_name == self.target.class_name
+                and math.isfinite(msg.confidence) and msg.confidence >= self.p['confidence']
+                and 0 <= msg.center_x < self.p['image_width']
+                and 0 <= msg.center_y < self.p['image_height']
+                and msg.width > 0 and msg.height > 0):
+            self.target = msg
+            self.target_seen = now
 
     def head_ready(self):
         return (time.monotonic()-self.head_seen < 1.0 and
@@ -210,10 +219,25 @@ class NormalModeNode(Node):
         self.set_stage('SCAN_' + side, 5)
 
     def discover(self, target, now):
-        # Celebrate once at the current angle; no continuous object tracking.
+        # A short surprised chirp precedes a bounded, stationary tracking phase.
+        self.target, self.target_seen = target, now
         self.attention.handled_target(target, now)
-        self.head_command(float(self.head['pan']), float(self.head['tilt']), 3)
+        self.head_command(float(self.head['pan']), float(self.head['tilt']), 4)
         self.set_stage('DISCOVERED', 5)
+
+    def say_goodbye(self):
+        self.target = None
+        self.head_command(self.p['pan_home'], self.p['tilt_home'], 6)
+        self.set_stage('GOODBYE', 5)
+
+    def start_roaming(self):
+        if not self.nav.server_is_ready():
+            self.fault('Exploration action server is unavailable')
+            return
+        request = Explore.Goal()
+        request.session_id, request.mode = self.session, 'SHORT_ROAM'
+        self.send_future = self.nav.send_goal_async(request)
+        self.set_stage('MOVING', self.p['move_timeout_sec'])
 
     def nav_pending(self):
         return self.send_future is not None or self.goal is not None
@@ -309,10 +333,7 @@ class NormalModeNode(Node):
                     self.set_stage('DEPARTING', 5)
             elif self.stage == 'DEPARTING':
                 if self.head_done():
-                    request = Explore.Goal()
-                    request.session_id, request.mode = self.session, 'SHORT_ROAM'
-                    self.send_future = self.nav.send_goal_async(request)
-                    self.set_stage('MOVING', self.p['move_timeout_sec'])
+                    self.start_roaming()
                 elif now > self.deadline:
                     self.fault('Departure acknowledgement timed out')
             elif self.stage == 'MOVING':
@@ -348,12 +369,38 @@ class NormalModeNode(Node):
                         self.set_stage('REST', self.p['rest_sec'])
             elif self.stage == 'DISCOVERED':
                 if self.head_done():
-                    self.set_stage('DISCOVERY_PAUSE', 1.2)
+                    if self.target is None or now-self.target_seen > 1.2:
+                        self.say_goodbye()
+                    else:
+                        # Play the thoughtful hum once, not on every tracking step.
+                        self.head_command(float(self.head['pan']), float(self.head['tilt']), 5)
+                        self.set_stage('TRACKING', self.p['track_timeout_sec'])
                 elif now > self.deadline:
                     self.fault('Discovery acknowledgement timed out')
-            elif self.stage == 'DISCOVERY_PAUSE' and now > self.deadline:
-                self.home()
-                self.set_stage('RETURN_HEAD', 5)
+            elif self.stage == 'TRACKING':
+                if self.target is None or now-self.target_seen > 1.2 or now > self.deadline:
+                    self.say_goodbye()
+                    return
+                if not self.head_done():
+                    if now-self.head_sent > 5:
+                        self.fault('Tracking acknowledgement timed out')
+                    return
+                pan, tilt, centered = tracking_angles(self.target,
+                    self.p['image_width'], self.p['image_height'],
+                    float(self.head['pan']), float(self.head['tilt']),
+                    self.p['pan_sign'], self.p['tilt_sign'],
+                    (self.p['pan_min'], self.p['pan_max']),
+                    (self.p['tilt_min'], self.p['tilt_max']))
+                # No repeated commands in the dead band or at a mechanical limit.
+                if not centered and (round(pan), round(tilt)) != (
+                        round(float(self.head['pan'])), round(float(self.head['tilt']))):
+                    self.head_command(pan, tilt)
+            elif self.stage == 'GOODBYE':
+                # Wait for centering AND the farewell phrase; then roam without REST.
+                if self.head_done() and now-self.head_sent >= .65:
+                    self.start_roaming()
+                elif now > self.deadline:
+                    self.fault('Goodbye centering acknowledgement timed out')
         except Exception as error:
             self.fault(str(error))
 
@@ -375,4 +422,5 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+
 

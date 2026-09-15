@@ -2,7 +2,7 @@
 // Pins and motion limits calibrated on Odi; upload moves the head to 84/65.
 // Protocol at 115200: P -> S enabled pan tilt busy
 // M sequence pan tilt beepCount -> D sequence after commanded motion + settle.
-// beepCount 1..3 now plays that many pitch-swept phrases; 0 starts no new sound.
+// Sound IDs: 0 silent, 1 departure, 2 scan, 3 legacy, 4 surprise, 5 hum, 6 goodbye.
 // D is commanded completion, NOT encoder feedback (ordinary servos have none).
 #include <Servo.h>
 #include <avr/pgmspace.h>
@@ -32,6 +32,7 @@ const uint16_t TALK_TIME[] = {90, 45, 65, 40, 110};
 const byte TALK_STEPS = 5;
 byte talkStep = 0, talksLeft = 0, talkVariant = 0;
 bool talking = false;
+byte soundPreset = 0;
 unsigned long talkStarted = 0, talkUpdated = 0;
 
 void stopTalk() {
@@ -42,9 +43,10 @@ void stopTalk() {
 void startTalk(int count) {
   // A silent follow-up servo command must not cut off a bounded phrase.
   // H / watchdog home explicitly stops all sound.
-  if (count <= 0 || BUZZER_PIN < 0) return;
+  if (count <= 0 || count > 6 || BUZZER_PIN < 0) return;
   stopTalk();
-  talksLeft = count; talkStep = 0; talkVariant = 0; talking = true;
+  soundPreset = count == 3 ? 0 : count;
+  talksLeft = soundPreset ? 1 : count; talkStep = 0; talkVariant = 0; talking = true;
   talkStarted = millis(); talkUpdated = talkStarted - 10;
 }
 
@@ -52,6 +54,35 @@ void updateTalk() {
   if (!talking) return;
   unsigned long now = millis();
   unsigned long elapsed = now - talkStarted;
+  if (soundPreset) {
+    const unsigned long duration = soundPreset == 1 ? 300 : soundPreset == 2 ? 720
+        : soundPreset == 4 ? 180 : soundPreset == 5 ? 1200 : 600;
+    if (elapsed >= duration) { stopTalk(); return; }
+    if (now - talkUpdated < 10) return;
+    talkUpdated = now;
+    long hz = 0;
+    if (soundPreset == 1) {
+      // Departure: three short rising notes.
+      hz = elapsed < 90 ? 520 : elapsed < 110 ? 0
+          : elapsed < 190 ? 660 : elapsed < 210 ? 0 : 820;
+    } else if (soundPreset == 2) {
+      // Looking around: a questioning rise, a pause, then a soft fall.
+      if (elapsed < 280) hz = 480 + 180L * elapsed / 280;
+      else if (elapsed >= 420) hz = 620 - 140L * (elapsed - 420) / 300;
+    } else if (soundPreset == 4) {
+      hz = 650 + 300L * elapsed / duration;  // "Oh!"
+    } else if (soundPreset == 5) {
+      hz = elapsed < 400 ? 420 + 100L * elapsed / 400
+          : 520 - 80L * (elapsed - 400) / 800;  // "Hmm"
+    } else {
+      // Goodbye: two gently falling phrases, distinct from departure.
+      if (elapsed < 220) hz = 780 - 120L * elapsed / 220;
+      else if (elapsed >= 320) hz = 660 - 200L * (elapsed - 320) / 280;
+    }
+    if (hz) tone(BUZZER_PIN, (unsigned int)hz);
+    else noTone(BUZZER_PIN);
+    return;
+  }
   if (elapsed >= TALK_TIME[talkStep]) {
     noTone(BUZZER_PIN);
     ++talkStep;
@@ -161,7 +192,7 @@ void command() {
   char extra;
   if (sscanf(input, "M %lu %d %d %d %c", &seq, &p, &t, &b, &extra) != 4 ||
       !enabled || p < PAN_MIN || p > PAN_MAX || t < TILT_MIN ||
-      t > TILT_MAX || b < 0 || b > 3) {
+      t > TILT_MAX || b < 0 || b > 6) {
     Serial.println("E invalid"); return;
   }
   lastContact = millis();
@@ -232,3 +263,4 @@ void loop() {
   drawFace();
   updateTalk();
 }
+

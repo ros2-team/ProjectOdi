@@ -60,7 +60,7 @@ normal_node:
     confidence: 0.6
     minimum_area_ratio: 0.02
     cooldown_sec: 60.0
-    rest_sec: 8.0
+    rest_sec: 3.0
     move_timeout_sec: 30.0
     track_timeout_sec: 6.0
     # Calibrate signs, neutral positions and limits on the actual mount.
@@ -73,3 +73,4 @@ normal_node:
     tilt_min: 0.0
     tilt_max: 100.0
     nod_degrees: 6.0
+

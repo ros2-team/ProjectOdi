@@ -199,24 +199,39 @@ scanning. Each camera move waits for its matching completion acknowledgement.
 The camera sweeps 25 degrees either side of its calibrated home (clamped to limits)
 and pauses 1.5 seconds at each position for stable detections.
 
-A fresh admitted object triggers DISCOVERED → DISCOVERY_PAUSE → RETURN_HEAD → REST.
-It reacts at the current camera angle and does not continuously track the object.
+A fresh admitted object triggers DISCOVERED → TRACKING → GOODBYE → MOVING.
+It chirps briefly, then hums once and tracks the same detection ID with bounded
+3-degree acknowledged steps. Tracking lasts at most track_timeout_sec (default 6s);
+a missing target for 1.2s ends tracking early. Goodbye centers the head and waits
+for its acknowledgement and the farewell sound before directly starting the next roam.
+Regular REST is reduced from 8s to 3s in both the node default and odi.yaml. A centered target generates no repeated
+servo commands. The base remains stationary throughout.
 Existing class/confidence/area/stability filters and per-class cooldown remain.
 Detections collected during a camera sweep are cleared at the start of each pause.
 
-Existing firmware beep counts are used without a serial protocol change:
-1 phrase before short roaming, 2 phrases at the start of looking around, 3 phrases
-on discovery. These are different repeat patterns of the existing voice-like sound,
-not three newly composed melodies. No Arduino upload is required if the current
-odi_head firmware already supports beep counts 0..3.
+Sound presets use distinct melodies (not different repeat counts):
+1 departure: 300ms rising three-note phrase;
+2 scanning: 720ms questioning rise/pause/fall;
+4 discovery: 180ms surprised upward chirp;
+5 tracking: 1.2s low thoughtful hum, played once;
+6 goodbye: 600ms two falling phrases. ID 3 retains the old phrase for compatibility.
+These are buzzer tones, not recorded speech. Sound servicing remains non-blocking,
+and silent tracking commands do not cut off the hum. Watchdog/H still stops sound.
 
-Deploy on PC: pull test/assambly4 and rebuild odi_normal, then restart the project
+This revision REQUIRES updating firmware/odi_head/odi_head.ino on the Arduino Uno,
+as well as the PC normal node and Pi head bridge (now accepts sound IDs 0..6).
+An older sketch/bridge rejects IDs 4..6, causing an acknowledgement timeout.
+Stop normal mode and release the Uno serial port before uploading. Do not run the
+new normal node until both the bridge and firmware have been updated.
+
+Deploy on PC: pull test/assambly4 and rebuild odi_normal and odi_bringup, then restart the project
 and web. Copy the updated odi_normal package into ~/odi_head_ws/src on the Pi and
-rebuild it there to update LCD stage mappings; restart the existing head bridge.
+rebuild it there to accept the new sound IDs; restart the existing head bridge.
 Keep exactly one head bridge owning the Arduino port. Do not add a manual bridge
 while the robot launcher already runs one.
 
 Offline tests cover departure acknowledgement, scan/stop interlocks, a complete
-left/right/center cycle, discovery without tracking, cooldown and stale detections.
+left/right/center cycle, bounded tracking, target loss, cooldown and stale detections.
 Actual servo movement, buzzer audibility and driving still require a robot test.
+
 
