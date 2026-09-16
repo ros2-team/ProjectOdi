@@ -1,42 +1,4 @@
-"""
-ROS2 연결 — 로봇 세계와 웹 세계가 만나는 지점.
-
-ROS2 노드 하나를 만들어 토픽을 구독하고,
-받은 내용을 state / frames 에 써 넣는다. 그게 전부다.
-app 을 import 하지 않는다 — 이 파일은 웹이 존재하는지도 모른다.
-"""
-
-# ┌─ 연결 지도 ────────────────────────────────────────────────
-# │ import 하는 것 :
-# │     config                토픽 이름, 사진 폴더
-# │     bridge.state          로봇 상태 (쓰기만)
-# │     bridge.frames         카메라 사진 (쓰기만)
-# │     bridge.commands       웹이 넣어둔 명령 (읽기만)
-# │
-# │ ★ app.py 를 import 하지 않는다.
-# │   웹에서 오는 명령도 commands 큐를 통해서만 받는다.
-# │
-# │ 부르는 파일 : run.py 의 start_producers()
-# │              (config.USE_FAKE = False 일 때만)
-# └────────────────────────────────────────────────────────────
-
-# ════════════════════════════════════════════════════════════
-# 구독하는 토픽과 화면의 대응
-#
-#   /camera/image_raw/compressed   CompressedImage       카메라 영상
-#   /odom                          Odometry              위치 갱신 트리거
-#   map → base_footprint TF        지도 위 실제 위치/경로
-#
-#   MissionState        →  화면 라우팅 (탐험 / 복귀 / 일기 …)
-#   BehaviorState       →  상단 큰 문구
-#   DetectedObjectArray →  "다음 차례 · bottle, backpack"
-#
-#   ★ 발견 하나가 세 메시지에 걸쳐 온다. detection_id 로 묶인다.
-#   EncounterResult     →  ① "저기 뭔가 있어요"     사진 1장 + 라벨
-#   CuriosityDecision   →  ② "처음 보는 물체예요"   판단 결과
-#   ObservationResult   →  ③ "관찰 완료"            대표 사진 + 요약
-#
-# ════════════════════════════════════════════════════════════
+"""ROS topic subscriptions, command publishing and web state synchronization."""
 
 import functools
 import json
@@ -46,8 +8,7 @@ import time
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import (DurabilityPolicy, QoSProfile, ReliabilityPolicy,
-                       qos_profile_sensor_data)
+from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
 from tf2_ros import Buffer, TransformListener
 

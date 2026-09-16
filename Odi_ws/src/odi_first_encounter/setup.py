@@ -32,11 +32,7 @@ setup(
                 'first_encounter_node = '
                 'odi_first_encounter.first_encounter_node:main'
             ),
-            (
-                'vlm_node = '
-                'odi_first_encounter.first_encounter_node:main'
-            ),
-            'yolo_node = odi_first_encounter.yolo_node:main',
+
         ],
     },
 )

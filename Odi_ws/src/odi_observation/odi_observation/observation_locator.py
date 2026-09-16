@@ -23,7 +23,7 @@ class ObservationLocator(Node):
     def __init__(self):
         super().__init__('observation_locator')
 
-        # ================== 네가 채울 값 ==================
+        # 카메라와 LiDAR 보정값
         self.scan_topic = '/scan'
         self.yolo_topic = '/observe/locate_request'
         self.approach_goal_topic = '/observe/approach_goal'
@@ -40,46 +40,19 @@ class ObservationLocator(Node):
 
         self.standoff = 0.6   # 물체 앞 몇 m 지점에 설 것인지
 
-        # ---- 테스트 모드 (검증 끝나면 False 로) ----
-        # YOLO 가 찍어준 bbox 의 좌/우 x 픽셀을 손으로 넣고
-        # 2초마다 좌표를 계산해서 로그로 출력한다.
-        self.test_mode = False
-        self.test_u_left = 87.0
-        self.test_u_right = 102.0
-        # # # =================================================
-
-        ############################################# 구독 #################################################
         self.latest_scan = None
         self.create_subscription(LaserScan, self.scan_topic, self.scan_cb, qos_profile_sensor_data)
 
         self.create_subscription(DetectedObject, self.yolo_topic, self.request_cb, 10)
 
-        ################################################ 발행 #####################################################
         self.goal_pub = self.create_publisher(PoseStamped, self.approach_goal_topic, 10)
 
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
 
-        # self.create_timer(2.0, self.test_tick)
-        # self.get_logger().info('test_mode ON (u_left=%.1f, u_right=%.1f)'
-        #                                    % (self.test_u_left, self.test_u_right))
-
-        if self.test_mode:
-            self.create_timer(2.0, self.test_tick)
-            self.get_logger().info('test_mode ON (u_left=%.1f, u_right=%.1f)'
-                                   % (self.test_u_left, self.test_u_right))
-
-    # ---------------- 콜백은 저장만 ----------------
-
     def scan_cb(self, msg):
         self.latest_scan = msg
-
-    def test_tick(self):
-        res = self.locate(self.test_u_left, self.test_u_right)
-
-        if res is not None:
-            self.publish_goal(res)
 
     def request_cb(self, msg):
         obj = msg        # DetectedObject 단일이면 obj = msg
@@ -170,7 +143,6 @@ class ObservationLocator(Node):
                 self.map_frame,
                 self.lidar_frame,
                 Time(),
-                # timeout=Duration(seconds=0.5),
             )
         except Exception as e:
             self.get_logger().warning('TF lookup 실패: %s' % str(e))
@@ -212,20 +184,6 @@ class ObservationLocator(Node):
             % (out.point.x, out.point.y, goal.point.x, goal.point.y,
                math.degrees(goal_yaw), r))
         return result
-
-
-        # result = {
-        #     'map_x': out.point.x,
-        #     'map_y': out.point.y,
-        #     'range': r,          # 로봇 기준 거리 (m)
-        #     'bearing': theta,    # 로봇 기준 각도 (rad), 왼쪽이 +
-        # }
-
-        # self.get_logger().info(
-        #     'object -> range=%.2fm  bearing=%+.1fdeg  map(%.2f, %.2f)'
-        #     % (r, math.degrees(theta), result['map_x'], result['map_y'])
-        # )
-        # return result
 
 
 def main():

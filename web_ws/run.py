@@ -16,11 +16,7 @@ from bridge.app import create_app
 
 
 def start_producers():
-    """STATE 를 채우는 쪽을 띄운다.
-
-    1단계: 가짜 시나리오
-    2단계: fake 를 지우고 ros_link.spin_in_thread() 로 교체
-    """
+    """Start ROS input, or the explicitly enabled preview producer."""
     if config.USE_FAKE:
         from bridge import fake
         threading.Thread(target=fake.loop, daemon=True).start()
@@ -37,7 +33,7 @@ def main():
     print(f"[bridge] http://{config.HOST}:{config.PORT}   (Ctrl+C 로 종료)")
 
     # use_reloader=False 가 핵심.
-    # 리로더는 프로세스를 두 번 띄운다. 2단계에서 그러면 ROS 노드가 두 개 떠서
+    # 리로더는 프로세스를 두 번 띄운다. 그러면 ROS 노드가 두 개 떠서
     # 같은 토픽을 중복 구독하고, 발견 이벤트가 두 번씩 들어온다.
     app.run(
         host=config.HOST,

@@ -26,7 +26,6 @@ from odi_interfaces.action import ReturnHome
 from odi_interfaces.action import Reflect
 
 
-
 from odi_behavior_executor.blackboard import(
     ObjectProcessStage,
     OdiBlackboard,
@@ -288,32 +287,6 @@ class BehaviorExecutorNode(Node):
             f"\n bbox_size = {selected_object.width} X {selected_object.height}"
         )
         self.select_next_object()
-
-        # valid_objects.sort(
-        #     key=lambda detected_object:
-        #         abs(detected_object.center_x),
-        # )
-        # self.blackboard.detection_locked = True
-        # self.blackboard.exploration_paused = True
-
-        # self.cancel_exploration()
-
-        # self.blackboard.pending_objects.extend(
-        #     valid_objects
-        # )
-        # self.get_logger().info(
-        #     "\n::Detected object batch received::\n"
-        #     f"{len(valid_objects)} object"
-        # )
-
-        # for detected_object in valid_objects:
-        #     self.get_logger().info(
-        #         "\n::Queued detected object::\n"
-        #         f"id = {detected_object.detection_id}\n"
-        #         f"class = {detected_object.class_name}\n"
-        #         f"confidence = {detected_object.confidence:.2f}"
-        #     )
-        # self.select_next_object()
 
     def select_next_object(self) -> bool:
         self.get_logger().info(
@@ -846,7 +819,6 @@ class BehaviorExecutorNode(Node):
                 f"observation_count = {self.blackboard.observation_count}"
             ),
         )
-
 
 
     def start_first_encounter(self) -> None:
@@ -1975,8 +1947,6 @@ class BehaviorExecutorNode(Node):
         self.get_logger().info(
             "\n Reset preparation completed"
         )
-
-
 
 
 #행동 변동시 변경하고 바로 발행
