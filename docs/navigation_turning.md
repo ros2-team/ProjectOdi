@@ -1,36 +1,41 @@
-# 벽 앞 경로 방향 전환
+# 회전 반복 현상: RPP 시험 설정
 
-Humble DWB에 RotationShimController를 추가한다. 새 경로 방향이 0.52rad(약30도) 이상 어긋나면 충돌 검사 후 제자리 회전을 시도하고 DWB에 넘긴다. 회전 목표 속도는 0.6rad/s, 가속도는 1.5rad/s², 경로 샘플 거리는 0.35m다. Humble의 공통 지원 파라미터만 사용한다. 회전이 불가능할 때 플러그인은 DWB로 넘길 수 있으며, 반드시 유턴 성공을 보장하지 않는다.
+## 두 번째 기록에서 확인한 것
 
-SimpleProgressChecker는 회전을 진행으로 계산하지 않는다. 제한은 10초/0.5m에서 20초/0.15m로 변경해 유턴과 저속 이동 여유를 확보하되 영구 정체는 실패로 처리한다. trans_stopped_velocity는 0.25에서 0.03m/s로 내려 주행 속도를 정지로 판정하는 범위를 줄인다. 이는 주로 목표점 회전 판정과 관련된다.
+약49초 기록 중 주행 명령 구간 약40초 동안 위치 변화는 작고 각속도 부호가 반복 반전했다. 약1초마다 경로가 갱신되며 25.63초/45.70초에 Failed to make progress가 발생했다. TF와 경로를 비교하면 경로 방향과 어긋난 상태에서도 반대 방향 회전이 나타난다. 대표 시점의 직접 장애물 셀은 로봇 중심에서 약0.4m였고, inflation 비용 영역이 주변에 존재했다. 비용지도99는 팽창된 위험 영역이며 직접 장애물100과 구분했다.
 
-설치된 nav2_bringup/params/nav2_params.yaml에 navigation_overrides.yaml만 합친다. local/global costmap, 로봇 크기, inflation, planner, recovery, velocity smoother는 원래 설정을 유지한다. 적용 경로는 mapping_supervisor(탐험마다 재시작 포함)와 SLAM 없는 odi_system 실행 모두 odi_navigation.launch.py로 통일한다. 임시 설정은 launch 종료 시 제거된다.
+이 기록에는 컨트롤러 내부 critic 점수와 shim 전환 DEBUG 로그가 없으므로 정확한 전환 원인은 확정하지 않는다. 경로 재계산만 늦추거나 장애물 여유를 줄이지 않고, 회전과 주행을 하나의 알고리즘으로 처리하는 RPP를 시험한다.
 
-## 적용 (PC)
+## 변경
 
-로봇이 정지한 뒤 프로젝트와 주행 launch를 정상 종료한다. 변경 전까지의 실험 데이터/설정은 보관한다.
+- FollowPath를 nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController로 교체.
+- 방향차0.52rad 이상일 때 회전, 목표 회전속도0.6rad/s, 가속도1.5rad/s².
+- 전진 기준0.15m/s, 경로 참조 거리0.35m. 곡률/장애물 비용/목표 접근에 따라 감속.
+- 충돌 예측 검사 활성화, 기존 local/global costmap과 footprint/inflation 유지.
+- 후진 주행은 비활성화. 기존 Nav2 복구 행동은 유지.
+- 진행 판정20초/0.15m 유지. 불가능한 경로를 계속 강행하지 않는다.
+- 설치된 Nav2 기본 설정에 병합하되 FollowPath 플러그인 교체 시 DWB 전용 매개변수는 제거한다.
+- 탐험, 귀환, 일반모드가 공통으로 쓰는 Nav2에 적용된다.
+
+## PC 적용
+
+로봇을 정지하고 프로젝트/주행 launch를 정상 종료한 뒤:
 
 ```bash
-sudo apt install ros-humble-nav2-rotation-shim-controller
-# 저장소 최신화 후 Odi_ws에서
-colcon build --symlink-install --packages-select odi_bringup odi_normal
+sudo apt install ros-humble-nav2-regulated-pure-pursuit-controller
+# 최신 코드를 받은 저장소의 Odi_ws에서
+colcon build --symlink-install --packages-select odi_bringup
 source install/setup.bash
 ```
 
-기존 방식대로 odi_robot_start와 odi_project_start를 각각 한 번만 실행한다. 기존 Nav2를 남긴 채 새 launch를 추가하면 안 된다. Pi/Uno 수정은 이번 주행 변경에 필요 없다. 사용자가 올린 카메라84/75는 유지하며 normal_node 기본값도75로 맞춘다.
+odi_robot_start와 odi_project_start를 각각 한 번만 실행한다. Pi/Uno 변경 없음.
 
 ```bash
 ros2 param get /controller_server FollowPath.plugin
-ros2 param get /controller_server FollowPath.primary_controller
-ros2 param get /controller_server progress_checker.movement_time_allowance
 ```
 
-기대값: nav2_rotation_shim_controller::RotationShimController, dwb_core::DWBLocalPlanner, 20.0.
+기대값: nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController.
 
-## 실물 확인
+넓은 곳에서 후방 경로 정렬→전진을 확인하고 같은 벽 앞 귀환을 재현한다. 탐험·일반모드도 함께 확인한다. 실제 성공을 확인한 설정이 아니라 기록에 근거한 시험 수정이며, 오프라인에서는 설정 병합과 안전 설정 보존을 검증했다. 새 컨트롤러도 충돌을 예측하면 정지하므로 모든 정지를 없애는 수정이 아니다.
 
-넓은 공간에서 뒤쪽 목표로 회전 후 출발하는지 먼저 확인하고, 벽 앞에서 같은 귀환 상황을 재현한다. 탐험과 일반모드도 동일 컨트롤러를 쓰므로 함께 확인한다. 충돌 판정 때문에 회전이 안 되면 로봇 외형/footprint 및 local costmap을 점검해야 하며, inflation을 임의로 줄여 통과시키지 않는다. 반복 실패 시 controller_server의 오류와 /plan, /local_costmap/costmap, /odom, /cmd_vel, /tf를 함께 기록한다.
-
-오프라인 검증은 설정 병합/보존과 실행 연결을 확인한다. ROS2 플러그인 로딩과 실제 유턴 성공은 실물에서 검증해야 한다.
-
-공식 소스: https://github.com/ros-navigation/navigation2/tree/humble/nav2_rotation_shim_controller
+공식 Humble 소스: https://github.com/ros-navigation/navigation2/tree/humble/nav2_regulated_pure_pursuit_controller

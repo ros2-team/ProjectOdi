@@ -1,4 +1,4 @@
-"""Run the installed Nav2 stack with ODI's collision-checked initial rotation."""
+"""Run the installed Nav2 stack with ODI's collision-checked RPP path tracking."""
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -15,7 +15,7 @@ from odi_bringup.navigation_config import merge_navigation_config
 
 def generate_launch_description():
     # Fail clearly before launching any navigation nodes if the plugin is absent.
-    get_package_share_directory('nav2_rotation_shim_controller')
+    get_package_share_directory('nav2_regulated_pure_pursuit_controller')
     nav = Path(get_package_share_directory('nav2_bringup'))
     odi = Path(get_package_share_directory('odi_bringup'))
     base = yaml.safe_load((nav / 'params/nav2_params.yaml').read_text())
