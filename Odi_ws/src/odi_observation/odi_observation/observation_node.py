@@ -75,7 +75,19 @@ Return exactly one JSON object with this schema:
 
 Rules:
 - Use concise lowercase English values for object properties.
-- Write diary_summary in Korean using one or two factual sentences.
+- Write diary_summary as one or two short Korean diary sentences spoken by Odi,
+  a small, curious robot. Use warm first-person diary endings such as "만났다",
+  "눈길이 갔다", "한참 바라봤다", "기억해 두고 싶다".
+- Mention one or two genuinely visible details, with a small curious reaction.
+  Translate object names and properties into natural Korean in diary_summary;
+  keep the structured object properties in English as specified above.
+- Avoid report-like wording such as "관찰 결과", "확인되었다", "상태는 정상",
+  technical attribute lists, baby talk, repeated exclamation marks and emojis.
+- Tone examples ONLY (never copy details unless visible):
+  "작은 물병을 만났다. 반짝이는 뚜껑에 자꾸 눈길이 갔다."
+  "키보드에는 작은 네모들이 옹기종기 모여 있었다. 하나하나 구경하고 싶어졌다."
+- Odi's curiosity may be expressed, but do not invent touching, using an object,
+  another person's feelings, object movement, or events absent from the image.
 - Describe only visible properties.
 - Do not invent hidden properties or functions.
 - Use "unknown" when a property cannot be determined.
@@ -1407,25 +1419,15 @@ Rules:
 
     @staticmethod
     def build_diary_summary(label) -> str:
-        object_name = (
-            label.object_name or 'unknown object'
-        )
-        primary_color = (
-            label.object_primary_color or 'unknown'
-        )
-        material = (
-            label.object_material or 'unknown'
-        )
-        condition = (
-            label.object_condition or 'unknown'
-        )
+        names = {'bottle': '물병', 'keyboard': '키보드', 'backpack': '배낭',
+                 'handbag': '가방', 'cup': '컵', 'book': '책', 'mouse': '마우스',
+                 'chair': '의자', 'person': '사람'}
+        raw = str(label.object_name or '').strip()
+        name = names.get(raw.lower())
+        if name is None:
+            name = raw if raw and all('가' <= c <= '힣' or c.isspace() for c in raw) else '물건'
+        return f'오늘 눈길을 끈 건 {name}! 어떤 모습인지 찬찬히 들여다봤다.'
 
-        return (
-            f'{primary_color} 색상의 '
-            f'{object_name}을 관찰했다. '
-            f'재질은 {material}으로 보였고, '
-            f'상태는 {condition}이었다.'
-        )
 
 
 def main(args=None) -> None:

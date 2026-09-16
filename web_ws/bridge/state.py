@@ -273,6 +273,23 @@ def patch(**fields):
             STATE[k] = v
 
 
+def apply_motivation_report(data):
+    """Reject stale missions and malformed telemetry; update under the state lock."""
+    import math
+    try:
+        current, initial = float(data["current"]), float(data["initial"])
+        if not math.isfinite(current) or not math.isfinite(initial) or initial < 0:
+            return False
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return False
+    with LOCK:
+        if (not data.get("session_id") or data["session_id"] != STATE["session_id"]
+                or STATE["mission"] not in ("PREPARING", "EXPLORING", "RETURNING", "REFLECTING", "COMPLETED")):
+            return False
+        STATE["motivation"] = max(0.0, min(1.0, current / initial)) if initial > 0 else 0.0
+    return True
+
+
 def spend_motivation(amount):
     """의욕을 소비한다.
 

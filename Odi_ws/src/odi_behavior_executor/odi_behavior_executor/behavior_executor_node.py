@@ -54,6 +54,8 @@ class BehaviorExecutorNode(Node):
         super().__init__("behavior_executor_node")
 
         self.blackboard = OdiBlackboard()
+        self.initial_motivation = max(0, self.blackboard.motivation)
+        self.motivation_publisher = self.create_publisher(String, "/exploration/motivation", 10)
 
         self.current_behavior = BehaviorName.NONE
         self.current_status = BehaviorStatus.IDLE
@@ -200,6 +202,7 @@ class BehaviorExecutorNode(Node):
         self.blackboard.session_id = msg.session_id
 
         if previous_session_id != msg.session_id:
+            self.initial_motivation = max(0, self.blackboard.motivation)
             self.get_logger().info(
                 f"\n :: Mission session updated ::"
                 f"\n {previous_session_id or 'EMPTY'} -> {msg.session_id or 'EMPTY'}"
@@ -1992,7 +1995,18 @@ class BehaviorExecutorNode(Node):
         except Exception as error:
             self.get_logger().warning('Exploration sound skipped: ' + str(error))
 
+    def publish_motivation(self) -> None:
+        """Publish real remaining budget, normalized to this mission start."""
+        msg = String()
+        msg.data = json.dumps(dict(
+            session_id=self.blackboard.session_id,
+            current=max(0, self.blackboard.motivation),
+            initial=self.initial_motivation,
+        ))
+        self.motivation_publisher.publish(msg)
+
     def publish_current_behavior(self) -> None:
+        self.publish_motivation()
         msg = BehaviorState()
         msg.behavior = self.current_behavior.value
         msg.exploration_mode = self.exploration_mode

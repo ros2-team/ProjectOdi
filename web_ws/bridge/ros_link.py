@@ -101,6 +101,7 @@ class OdiBridgeNode(Node):
     def __init__(self):
         super().__init__("odi_web_bridge")
         self.create_subscription(String, '/normal/status', self.on_normal, 10)
+        self.create_subscription(String, '/exploration/motivation', self.on_motivation, 10)
 
         MEDIA_DIR.mkdir(parents=True, exist_ok=True)
         (MEDIA_DIR / "obs").mkdir(exist_ok=True)
@@ -346,6 +347,12 @@ class OdiBridgeNode(Node):
             self._exploring_since = time.time()
         elif msg.state in ("IDLE", "PREPARING", "COMPLETED"):
             self._exploring_since = None
+
+    @safe
+    def on_motivation(self, msg):
+        data = json.loads(msg.data)
+        if isinstance(data, dict):
+            state.apply_motivation_report(data)
 
     @safe
     def on_normal(self, msg):
