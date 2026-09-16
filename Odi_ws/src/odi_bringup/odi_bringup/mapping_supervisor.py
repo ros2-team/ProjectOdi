@@ -33,7 +33,7 @@ class MappingSupervisor(Node):
         sim_time = str(self.get_parameter('use_sim_time').value).lower()
         self.slam = OwnedProcess(['ros2', 'launch', 'turtlebot3_cartographer',
                                  'cartographer.launch.py', f'use_sim_time:={sim_time}'])
-        self.nav = OwnedProcess(['ros2', 'launch', 'nav2_bringup', 'navigation_launch.py',
+        self.nav = OwnedProcess(['ros2', 'launch', 'odi_bringup', 'odi_navigation.launch.py',
                                 f'use_sim_time:={sim_time}', 'autostart:=true'])
         self.busy = threading.Lock()
         self.booted = False

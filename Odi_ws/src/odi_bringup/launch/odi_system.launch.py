@@ -22,7 +22,6 @@ def generate_launch_description() -> LaunchDescription:
     cartographer_share = get_package_share_directory(
         'turtlebot3_cartographer'
     )
-    nav2_share = get_package_share_directory('nav2_bringup')
 
     use_sim_time = LaunchConfiguration('use_sim_time')
     robot_model = LaunchConfiguration('robot_model')
@@ -49,9 +48,9 @@ def generate_launch_description() -> LaunchDescription:
     navigation_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
-                nav2_share,
+                bringup_share,
                 'launch',
-                'navigation_launch.py',
+                'odi_navigation.launch.py',
             )
         ),
         launch_arguments={

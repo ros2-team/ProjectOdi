@@ -1,0 +1,15 @@
+# Overlay only: retain installed Nav2 planner, costmaps, recovery and smoother.
+controller_server:
+  ros__parameters:
+    progress_checker:
+      required_movement_radius: 0.15
+      movement_time_allowance: 20.0
+    FollowPath:
+      plugin: nav2_rotation_shim_controller::RotationShimController
+      primary_controller: dwb_core::DWBLocalPlanner
+      angular_dist_threshold: 0.52
+      forward_sampling_distance: 0.35
+      rotate_to_heading_angular_vel: 0.6
+      max_angular_accel: 1.5
+      simulate_ahead_time: 1.0
+      trans_stopped_velocity: 0.03
