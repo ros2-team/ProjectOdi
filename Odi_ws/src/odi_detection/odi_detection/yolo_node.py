@@ -34,8 +34,8 @@ class YoloNode(Node):
         self.declare_parameter('minimum_box_area_ratio', 0.01)
         self.declare_parameter('minimum_detection_frames', 3)
         self.declare_parameter('reobserve_cooldown_sec', 60.0)
-        self.declare_parameter('excluded_classes', ['tv', 'laptop', 'person', 'chair'])
-        self.declare_parameter('ignored_top_ratio', 0.0)
+        self.declare_parameter('excluded_classes', ['tv', 'laptop', 'person', 'chair', 'refrigerator', 'bed'])
+        self.declare_parameter('ignored_top_ratio', 0.10)
         self.declare_parameter('maximum_observation_distance', 2.0)
         self.declare_parameter('camera_info_topic', '/camera/camera_info')
         self.policy = CandidatePolicy(

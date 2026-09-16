@@ -17,7 +17,7 @@ class CandidatePolicy:
     """
 
     def __init__(self, min_area=0.025, min_hits=3, cooldown=60.0,
-                 excluded=('tv', 'laptop', 'person', 'chair'), ignored_top_ratio=0.0):
+                 excluded=('tv', 'laptop', 'person', 'chair', 'refrigerator', 'bed'), ignored_top_ratio=0.0):
         self.min_area = min_area
         self.min_hits = min_hits
         self.cooldown = cooldown
