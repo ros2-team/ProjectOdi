@@ -16,7 +16,7 @@ class CandidatePolicy:
     This is short-term image tracking, not persistent object identity.
     """
 
-    def __init__(self, min_area=0.025, min_hits=3, cooldown=60.0,
+    def __init__(self, min_area=0.025, min_hits=3, cooldown=90.0,
                  excluded=('tv', 'laptop', 'person', 'chair', 'refrigerator', 'bed'), ignored_top_ratio=0.0):
         self.min_area = min_area
         self.min_hits = min_hits
@@ -45,8 +45,22 @@ class CandidatePolicy:
         output = []
         # Largest boxes first makes association independent of YOLO box order.
         for box, name in sorted(items, key=lambda item: -(item[0][2]-item[0][0])*(item[0][3]-item[0][1])):
-            matches = [(iou(box, self.tracks[k]['box']), k) for k in available
-                       if self.tracks[k]['name'] == name]
+            # A label may flicker while the camera still sees the same box.
+            # Only bridge a recent, strongly overlapping, unambiguous label change.
+            matches = []
+            cross_label = []
+            for k in available:
+                previous = self.tracks[k]
+                overlap = iou(box, previous['box'])
+                if previous['name'] == name:
+                    matches.append((overlap, k))
+                elif overlap >= 0.6 and now - previous['seen'] <= 0.75:
+                    competing = sum(iou(other_box, previous['box']) >= 0.6
+                                    for other_box, _ in items)
+                    if competing == 1:
+                        cross_label.append((overlap, k))
+            if len(cross_label) == 1:
+                matches.extend(cross_label)
             score, key = max(matches, default=(0, ''))
             if score < 0.3:
                 key = f'{self.session}:track_{self.counter}'
