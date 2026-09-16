@@ -26,15 +26,16 @@ class YoloNode(Node):
         super().__init__('yolo_node')
 
         self.declare_parameter('model_path', 'yolov8n.pt')
-        self.declare_parameter('confidence', 0.5)
+        self.declare_parameter('confidence', 0.35)
         self.declare_parameter('process_every_n_frames', 3)
         self.declare_parameter('lost_frame_threshold', 30)
         self.declare_parameter('device', 'cpu')
         self.declare_parameter('batch_publish_interval_sec', 1.0)
-        self.declare_parameter('minimum_box_area_ratio', 0.025)
+        self.declare_parameter('minimum_box_area_ratio', 0.01)
         self.declare_parameter('minimum_detection_frames', 3)
         self.declare_parameter('reobserve_cooldown_sec', 60.0)
-        self.declare_parameter('excluded_classes', ['tv', 'laptop'])
+        self.declare_parameter('excluded_classes', ['tv', 'laptop', 'person', 'chair'])
+        self.declare_parameter('ignored_top_ratio', 0.30)
         self.declare_parameter('maximum_observation_distance', 2.0)
         self.declare_parameter('camera_info_topic', '/camera/camera_info')
         self.policy = CandidatePolicy(
@@ -42,6 +43,7 @@ class YoloNode(Node):
             min_hits=max(1, int(self.get_parameter('minimum_detection_frames').value)),
             cooldown=float(self.get_parameter('reobserve_cooldown_sec').value),
             excluded=self.get_parameter('excluded_classes').value,
+            ignored_top_ratio=float(self.get_parameter('ignored_top_ratio').value),
         )
         self.maximum_observation_distance = float(
             self.get_parameter('maximum_observation_distance').value)
@@ -229,7 +231,9 @@ class YoloNode(Node):
             if eligible:
                 detections.append(detection)
                 crop_candidates.append((detection.confidence, x1, y1, x2, y2))
-            self.detection_publisher.publish(detection)
+            # Apply the same view/class gate to normal-mode tracking updates.
+            if self.policy.in_observation_view(boxes[index], names[index], height):
+                self.detection_publisher.publish(detection)
 
             cv2.circle(
                 annotated_frame,

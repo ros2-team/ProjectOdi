@@ -47,7 +47,7 @@ class NormalModeNode(Node):
                         rest_sec=3.0, move_timeout_sec=30.0, track_timeout_sec=6.0,
                         pan_sign=-1.0, tilt_sign=1.0,
                         pan_min=40.0, pan_max=140.0, tilt_min=0.0, tilt_max=100.0,
-                        pan_home=84.0, tilt_home=65.0, nod_degrees=6.0)
+                        pan_home=84.0, tilt_home=70.0, nod_degrees=6.0)
         for key, value in defaults.items():
             self.declare_parameter(key, value)
         values = {k:self.get_parameter(k).value for k in defaults}

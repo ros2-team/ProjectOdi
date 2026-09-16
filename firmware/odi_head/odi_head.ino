@@ -1,5 +1,5 @@
 // Arduino Uno: calibrated pan/tilt motion, optional passive buzzer.
-// Pins and motion limits calibrated on Odi; upload moves the head to 84/65.
+// Pins and motion limits calibrated on Odi; upload moves the head to 84/70.
 // Protocol at 115200: P -> S enabled pan tilt busy
 // M sequence pan tilt beepCount -> D sequence after commanded motion + settle.
 // B soundID plays sound only, without changing servo state or refreshing its watchdog.
@@ -19,7 +19,7 @@ const int PAN_PIN = 10;       // Left/right (pan): confirmed Uno pin.
 const int TILT_PIN = 9;       // Up/down (tilt): confirmed Uno pin.
 const int BUZZER_PIN = 8;     // Passive buzzer.
 const int PAN_MIN = 40, PAN_MAX = 140, PAN_HOME = 84;
-const int TILT_MIN = 0, TILT_MAX = 100, TILT_HOME = 65;
+const int TILT_MIN = 0, TILT_MAX = 100, TILT_HOME = 70;
 Servo panServo, tiltServo;
 bool enabled = false, active = false;
 int panAngle = PAN_HOME, tiltAngle = TILT_HOME;

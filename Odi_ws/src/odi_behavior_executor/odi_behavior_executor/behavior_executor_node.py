@@ -245,7 +245,7 @@ class BehaviorExecutorNode(Node):
         valid_objects = [
             detected_object
             for detected_object in msg.objects
-            if detected_object.confidence >= 0.5
+            if detected_object.confidence >= 0.35
             and detected_object.detection_id not in self.blackboard.handled_detection_ids
             and (
                 ':' not in detected_object.detection_id
@@ -266,10 +266,8 @@ class BehaviorExecutorNode(Node):
 
         self.blackboard.detection_locked = True
         self.blackboard.exploration_paused = True
-        # Preserve one selected object per batch when YOLO retries delivery.
-        self.blackboard.handled_detection_ids.update(
-            obj.detection_id for obj in valid_objects
-        )
+        # Leave unselected objects eligible for a later encounter.
+        self.blackboard.handled_detection_ids.add(selected_object.detection_id)
 
         self.cancel_exploration()
 

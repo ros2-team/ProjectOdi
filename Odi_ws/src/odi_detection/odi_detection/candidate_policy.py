@@ -17,12 +17,18 @@ class CandidatePolicy:
     """
 
     def __init__(self, min_area=0.025, min_hits=3, cooldown=60.0,
-                 excluded=('tv', 'laptop')):
+                 excluded=('tv', 'laptop', 'person', 'chair'), ignored_top_ratio=0.0):
         self.min_area = min_area
         self.min_hits = min_hits
         self.cooldown = cooldown
         self.excluded = set(excluded)
+        self.ignored_top_ratio = max(0.0, min(1.0, float(ignored_top_ratio)))
         self.reset('')
+
+    def in_observation_view(self, box, name, height):
+        """Keep full-image coordinates; reject boxes centered in the top band."""
+        return (name not in self.excluded
+                and (box[1] + box[3]) / 2 >= height * self.ignored_top_ratio)
 
     def reset(self, session):
         self.session = session
@@ -58,7 +64,7 @@ class CandidatePolicy:
             blocked = track['handled'] or any(
                 r['name'] == name and self._same_view(r, box, pose)
                 for r in self.recent)
-            eligible = (name not in self.excluded and area >= self.min_area
+            eligible = (self.in_observation_view(box, name, height) and area >= self.min_area
                         and track['hits'] >= self.min_hits and not blocked)
             output.append((box, name, key, eligible))
         return output

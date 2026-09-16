@@ -63,7 +63,7 @@ LCD 설치·표정 명령·실물 테스트는 [LCD 안내](head_lcd.md)를 참�
 1. 반영된 핀 설정(PAN_PIN=10, TILT_PIN=9)과 실제 배선이 일치하는지 확인합니다.
 2. 수동형 부저는 D8이며 BUZZER_PIN=8로 반영했습니다.
 3. 장착 방향과 기구 간섭을 확인하고 PAN_HOME/TILT_HOME 및 MIN/MAX를 설정합니다.
-   현재 정면은 PAN_HOME=84, TILT_HOME=65입니다.
+   현재 정면은 PAN_HOME=84, TILT_HOME=70 (기존 65에서 +5도; tilt_sign=+1 기준 하향, 실제 장착 방향 확인 필요)입니다.
 4. 물리적으로 제한 범위가 안전함을 확인한 뒤 ENABLE_SERVOS=true로 바꿉니다.
 5. Arduino IDE에서 보드 Arduino Uno와 해당 USB 포트를 선택하고
    Servo와 hd44780(Bill Perry) 라이브러리를 설치한 뒤 업로드합니다.
