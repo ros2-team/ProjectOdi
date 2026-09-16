@@ -19,7 +19,7 @@ const int PAN_PIN = 10;       // Left/right (pan): confirmed Uno pin.
 const int TILT_PIN = 9;       // Up/down (tilt): confirmed Uno pin.
 const int BUZZER_PIN = 8;     // Passive buzzer.
 const int PAN_MIN = 40, PAN_MAX = 140, PAN_HOME = 84;
-const int TILT_MIN = 0, TILT_MAX = 100, TILT_HOME = 75;
+const int TILT_MIN = 0, TILT_MAX = 100, TILT_HOME = 70;
 Servo panServo, tiltServo;
 bool enabled = false, active = false;
 int panAngle = PAN_HOME, tiltAngle = TILT_HOME;
