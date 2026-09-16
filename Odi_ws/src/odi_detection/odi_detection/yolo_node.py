@@ -17,6 +17,7 @@ from ultralytics import YOLO
 
 from odi_interfaces.msg import DetectedObject, DetectedObjectArray, MissionState, EncounterResult
 from odi_detection.candidate_policy import CandidatePolicy, projected_range
+from odi_detection.turn_gate import TurnGate
 
 
 class YoloNode(Node):
@@ -47,6 +48,13 @@ class YoloNode(Node):
         )
         self.maximum_observation_distance = float(
             self.get_parameter('maximum_observation_distance').value)
+        self.declare_parameter('observation_turn_start_rad_s', 0.20)
+        self.declare_parameter('observation_turn_stop_rad_s', 0.10)
+        self.declare_parameter('observation_settle_sec', 0.5)
+        self.turn_gate = TurnGate(
+            start=float(self.get_parameter('observation_turn_start_rad_s').value),
+            stop=float(self.get_parameter('observation_turn_stop_rad_s').value),
+            settle=float(self.get_parameter('observation_settle_sec').value))
         self.camera_info = None
         self.scan = None
         self.scan_received = 0.0
@@ -144,6 +152,7 @@ class YoloNode(Node):
         position = message.pose.pose.position
         self.odom_pose = (position.x, position.y)
         self.odom_received = time.monotonic()
+        self.turn_gate.update(message.twist.twist.angular.z, self.odom_received)
 
     def encounter_callback(self, message):
         # Suppress both successful and failed attempts to avoid retry loops.
@@ -187,6 +196,7 @@ class YoloNode(Node):
         if self.frame_count % self.process_every_n_frames != 0:
             return
 
+        view_ready = self.turn_gate.allowed(time.monotonic())
         frame = self.bridge.compressed_imgmsg_to_cv2(
             message,
             'bgr8',
@@ -208,6 +218,10 @@ class YoloNode(Node):
         names = [self.model.names[int(box.cls[0])] for box in result.boxes]
         pose = self.odom_pose if now-self.odom_received <= 1.0 else None
         associated = self.policy.update(list(zip(boxes, names)), width, height, now, pose)
+        if not view_ready:
+            # Track identity keeps updating, but turning frames cannot establish stability.
+            for track in self.policy.tracks.values():
+                track['hits'] = 0
         associations = {(box, name): (key, eligible) for box, name, key, eligible in associated}
         scan_points = self.scan_points_in_camera(message, width, height)
 
@@ -253,6 +267,11 @@ class YoloNode(Node):
         # Keep the camera preview running while idle, without consuming the
         # first detection event before Behavior is ready to explore.
         if self.mission_state != 'EXPLORING' or not self.current_session_id:
+            return
+
+        if not view_ready or not self.turn_gate.allowed(time.monotonic()):
+            for track in self.policy.tracks.values():
+                track['hits'] = 0
             return
 
         if self.maximum_observation_distance > 0 and not scan_points and now-self.range_notice_at >= 30.0:

@@ -172,6 +172,8 @@ class DetectorTests(unittest.TestCase):
         self.node.bridge = Mock()
         self.node.bridge.compressed_imgmsg_to_cv2.return_value = NS(shape=(240, 320, 3))
         self.node.policy = CandidatePolicy(min_hits=1)
+        self.node.turn_gate = Mock()
+        self.node.turn_gate.allowed.return_value = True
         self.node.odom_pose = None
         self.node.odom_received = 0.0
         self.node.scan_points_in_camera = Mock(return_value=[])
