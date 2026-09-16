@@ -217,7 +217,8 @@ class YoloNode(Node):
         boxes = [tuple(map(int, box.xyxy[0].cpu().numpy().astype(int))) for box in result.boxes]
         names = [self.model.names[int(box.cls[0])] for box in result.boxes]
         pose = self.odom_pose if now-self.odom_received <= 1.0 else None
-        associated = self.policy.update(list(zip(boxes, names)), width, height, now, pose)
+        associated = self.policy.update(list(zip(boxes, names)), width, height, now, pose,
+                                        turn_link=self.turn_gate.can_link(now))
         if not view_ready:
             # Track identity keeps updating, but turning frames cannot establish stability.
             for track in self.policy.tracks.values():

@@ -37,10 +37,12 @@ class CandidatePolicy:
         self.history = {}
         self.recent = []
 
-    def update(self, items, width, height, now, pose=None):
+    def update(self, items, width, height, now, pose=None, *, turn_link=False):
         self.tracks = {k: v for k, v in self.tracks.items() if now-v['seen'] <= 3.0}
         self.recent = [r for r in self.recent if now-r['time'] < self.cooldown]
         self.history = {k: v for k, v in self.history.items() if now-v['seen'] < 120.0}
+        items = list(items)
+        previous_tracks = {k: dict(v) for k, v in self.tracks.items()}
         available = set(self.tracks)
         output = []
         # Largest boxes first makes association independent of YOLO box order.
@@ -62,6 +64,20 @@ class CandidatePolicy:
             if len(cross_label) == 1:
                 matches.extend(cross_label)
             score, key = max(matches, default=(0, ''))
+            if score < 0.3 and turn_link:
+                # Use only a unique same-class pair, never steal an overlap match.
+                same_class = [k for k, old in previous_tracks.items()
+                              if old['name'] == name]
+                if (len(same_class) == 1
+                        and sum(n == name for _, n in items) == 1):
+                    candidate = same_class[0]
+                    old = previous_tracks[candidate]
+                    competing_overlap = any(
+                        other_box != box and iou(other_box, old['box']) >= 0.3
+                        for other_box, _ in items)
+                    if (candidate in available and 0 <= now-old['seen'] <= 2.0
+                            and not competing_overlap):
+                        key, score = candidate, 0.3
             if score < 0.3:
                 key = f'{self.session}:track_{self.counter}'
                 self.counter += 1

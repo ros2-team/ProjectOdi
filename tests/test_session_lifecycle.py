@@ -174,6 +174,7 @@ class DetectorTests(unittest.TestCase):
         self.node.policy = CandidatePolicy(min_hits=1)
         self.node.turn_gate = Mock()
         self.node.turn_gate.allowed.return_value = True
+        self.node.turn_gate.can_link.return_value = False
         self.node.odom_pose = None
         self.node.odom_received = 0.0
         self.node.scan_points_in_camera = Mock(return_value=[])
