@@ -49,7 +49,7 @@ yolo_node:
     minimum_detection_frames: 3
     reobserve_cooldown_sec: 60.0
     excluded_classes: ["tv", "laptop", "person", "chair"]
-    ignored_top_ratio: 0.30
+    ignored_top_ratio: 0.0
     maximum_observation_distance: 2.0
     camera_info_topic: /camera/camera_info
     device: cpu
