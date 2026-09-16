@@ -38,9 +38,9 @@ class OdiBlackboard:
     system_ready : bool = False
 
     # Motivation status
-    motivation: int = 10
+    motivation: int = 80
     observation_count: int = 0
-    minimum_observation_count: int = 1
+    minimum_observation_count: int = 3
 
     # Exploring status
     exploration_active: bool = False
@@ -77,9 +77,9 @@ class OdiBlackboard:
         self.battery_low = False
         self.system_ready = False
 
-        self.motivation = 10
+        self.motivation = 80
         self.observation_count = 0
-        self.minimum_observation_count = 1
+        self.minimum_observation_count = 3
 
         self.exploration_active = False
         self.exploration_paused = False
