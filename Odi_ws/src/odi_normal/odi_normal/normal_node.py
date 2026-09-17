@@ -41,7 +41,7 @@ class NormalParameters(TypedDict):
 class NormalModeNode(Node):
     def __init__(self):
         super().__init__('normal_node')
-        defaults = NormalParameters(image_width=320, image_height=240,
+        defaults = NormalParameters(image_width=640, image_height=480,
                         target_classes=['bottle', 'backpack', 'cup'],
                         confidence=0.6, minimum_area_ratio=0.02, cooldown_sec=60.0,
                         rest_sec=3.0, move_timeout_sec=30.0, track_timeout_sec=6.0,

@@ -40,7 +40,7 @@ def _remote_script(action: str) -> str:
         camera_command = (
             setup_commands
             + '; exec ros2 launch turtlebot3_bringup camera.launch.py '
-            + 'format:=YUYV width:=320 height:=240'
+            + 'format:=YUYV width:=640 height:=480'
         ).replace('\n', '; ')
         head_script = ''
         head_setup = os.environ.get('ODI_HEAD_SETUP', '')

@@ -28,9 +28,11 @@ class ObservationLocator(Node):
         self.yolo_topic = '/observe/locate_request'
         self.approach_goal_topic = '/observe/approach_goal'
 
-        self.image_width = 320    # YOLO 에 들어가는 실제 이미지 가로 픽셀
-        self.fx = 270.2           # bearing_probe 로 구한 값으로 교체할 것
-        self.cx = 157.2           # image_width / 2
+        # Same field of view as the previous 320x240 stream, at 2x resolution.
+        # Scale both focal length and principal point to preserve pixel bearings.
+        self.image_width = 640
+        self.fx = 540.4
+        self.cx = 314.4
 
         self.lidar_frame = 'base_scan'
         self.map_frame = 'map'
