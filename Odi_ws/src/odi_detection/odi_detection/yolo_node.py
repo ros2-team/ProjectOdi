@@ -39,6 +39,9 @@ class YoloNode(Node):
         self.declare_parameter('ignored_top_ratio', 0.10)
         self.declare_parameter('maximum_observation_distance', 2.0)
         self.declare_parameter('camera_info_topic', '/camera/camera_info')
+        self.declare_parameter('label_identity_enabled', True)
+        self.label_identity_enabled = bool(
+            self.get_parameter('label_identity_enabled').value)
         self.declare_parameter('recent_detection_guards_enabled', False)
         self.recent_detection_guards_enabled = bool(
             self.get_parameter('recent_detection_guards_enabled').value)
@@ -224,7 +227,7 @@ class YoloNode(Node):
         associated = self.policy.update(list(zip(boxes, names)), width, height, now, pose,
                                         turn_link=(self.recent_detection_guards_enabled
                                                    and self.turn_gate.can_link(now)),
-                                        label_link=self.recent_detection_guards_enabled)
+                                        label_link=self.label_identity_enabled)
         if not view_ready:
             # Track identity keeps updating, but turning frames cannot establish stability.
             for track in self.policy.tracks.values():

@@ -50,6 +50,7 @@ yolo_node:
     reobserve_cooldown_sec: 90.0
     excluded_classes: ["tv", "laptop", "person", "chair", "refrigerator", "bed"]
     ignored_top_ratio: 0.10
+    label_identity_enabled: true
     recent_detection_guards_enabled: false
     observation_turn_start_rad_s: 0.20
     observation_turn_stop_rad_s: 0.10
