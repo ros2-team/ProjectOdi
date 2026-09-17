@@ -1,11 +1,11 @@
-# Camera stream: 640x480
+# Camera stream: restored to 320x240
 
-The remote camera launch in system_control.py now requests YUYV 640x480. The normal node YAML and standalone node defaults use 640x480. Detection boxes and crops continue using the actual incoming dimensions. Compressed transport is unchanged.
+The 640x480 field trial showed intermittent lag. Restore the prior stream to compare responsiveness; this does not prove whether CPU load or transport caused the lag.
 
-ObservationLocator fx/cx are doubled from 270.2/157.2 to 540.4/314.4. This preserves the existing bearing calculation for a 2x image at the same field of view; it is not a new calibration. A different sensor crop/field of view requires calibration.
+system_control.py requests YUYV 320x240. Normal-mode YAML and node defaults use 320x240. ObservationLocator restores fx=270.2 and cx=157.2. Compressed transport, YOLO filters and the current identity settings are unchanged: label_identity_enabled=true, recent_detection_guards_enabled=false.
 
-Restart the camera through odi_robot_start after rebuilding odi_bringup; restarting only odi_project_start does not apply the camera launch change. Stop both old launches before restarting once each. No Uno firmware change is required.
+Rebuild odi_bringup, odi_normal and odi_observation. Stop both old launch commands, then restart odi_robot_start and odi_project_start once each. Camera restart is required for launch dimensions to take effect. No Arduino upload is needed. Confirm /camera width=320 and height=240.
 
-Check /camera width and height are 640 and 480, and inspect /camera/camera_info. Its dimensions and intrinsics must describe the new image; the YOLO LiDAR filter skips projection if dimensions mismatch. Existing calibration files on the Pi are not modified by this change. Verify new camera_info if calibration is loaded via camera_info_url.
+This restores the existing pixel-bearing assumptions, not a new calibration. The previously reported empty camera_info is not fixed by lowering resolution; YOLO's calibrated LiDAR projection still requires valid calibration.
 
-Offline validation: equivalent old/new pixel bearings, right-half normal detection admission, normalized head tracking, and existing normal/fresh-mapping/label-flicker tests. Live image rate, camera_info calibration and robot behavior require hardware verification.
+Offline tests cover locator bearing, normal attention and head tracking. Verify camera latency and observation start on the robot.

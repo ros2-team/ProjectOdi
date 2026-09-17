@@ -60,8 +60,8 @@ yolo_node:
     device: cpu
 normal_node:
   ros__parameters:
-    image_width: 640
-    image_height: 480
+    image_width: 320
+    image_height: 240
     target_classes: [bottle, backpack, cup]
     confidence: 0.6
     minimum_area_ratio: 0.02

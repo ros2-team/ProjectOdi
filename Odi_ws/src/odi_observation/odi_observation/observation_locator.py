@@ -28,11 +28,10 @@ class ObservationLocator(Node):
         self.yolo_topic = '/observe/locate_request'
         self.approach_goal_topic = '/observe/approach_goal'
 
-        # Same field of view as the previous 320x240 stream, at 2x resolution.
-        # Scale both focal length and principal point to preserve pixel bearings.
-        self.image_width = 640
-        self.fx = 540.4
-        self.cx = 314.4
+        # Restore the original 320x240 pixel-bearing calibration.
+        self.image_width = 320
+        self.fx = 270.2
+        self.cx = 157.2
 
         self.lidar_frame = 'base_scan'
         self.map_frame = 'map'
