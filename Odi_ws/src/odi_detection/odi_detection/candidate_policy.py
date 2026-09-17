@@ -16,7 +16,7 @@ class CandidatePolicy:
     This is short-term image tracking, not persistent object identity.
     """
 
-    def __init__(self, min_area=0.025, min_hits=3, cooldown=90.0,
+    def __init__(self, min_area=0.025, min_hits=2, cooldown=90.0,
                  excluded=('tv', 'laptop', 'person', 'chair', 'refrigerator', 'bed'), ignored_top_ratio=0.0):
         self.min_area = min_area
         self.min_hits = min_hits
@@ -36,11 +36,15 @@ class CandidatePolicy:
         self.tracks = {}
         self.history = {}
         self.recent = []
+        self.completion_guards = []
+        self.completed_ids = set()
 
     def update(self, items, width, height, now, pose=None, *, turn_link=False, label_link=True):
         self.tracks = {k: v for k, v in self.tracks.items() if now-v['seen'] <= 3.0}
         self.recent = [r for r in self.recent if now-r['time'] < self.cooldown]
         self.history = {k: v for k, v in self.history.items() if now-v['seen'] < 120.0}
+        self.completion_guards = [g for g in self.completion_guards
+                                  if now < g['until']]
         items = list(items)
         previous_tracks = {k: dict(v) for k, v in self.tracks.items()}
         available = set(self.tracks)
@@ -100,10 +104,24 @@ class CandidatePolicy:
             blocked = track['handled'] or any(
                 r['name'] == name and self._same_view(r, box, pose)
                 for r in self.recent)
+            blocked = blocked or any(iou(g['box'], box) >= 0.3
+                                     for g in self.completion_guards)
             eligible = (self.in_observation_view(box, name, height) and area >= self.min_area
                         and track['hits'] >= self.min_hits and not blocked)
             output.append((box, name, key, eligible))
         return output
+
+    def observation_completed(self, key, now):
+        """Freeze a fresh final box for three seconds, without extending ID cooldowns."""
+        if key in self.completed_ids:
+            return False
+        self.completed_ids.add(key)
+        track = self.history.get(key)
+        # Never reuse the first-encounter box after a long observation or target loss.
+        if track is None or not 0 <= now-track['seen'] <= 1.0:
+            return False
+        self.completion_guards.append(dict(box=tuple(track['box']), until=now+3.0))
+        return True
 
     @staticmethod
     def _same_view(record, box, pose):

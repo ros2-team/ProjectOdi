@@ -15,7 +15,7 @@ from rclpy.duration import Duration
 from tf2_ros import Buffer, TransformListener
 from ultralytics import YOLO
 
-from odi_interfaces.msg import DetectedObject, DetectedObjectArray, MissionState, EncounterResult
+from odi_interfaces.msg import DetectedObject, DetectedObjectArray, MissionState, EncounterResult, ObservationResult
 from odi_detection.candidate_policy import CandidatePolicy, projected_range
 from odi_detection.turn_gate import TurnGate
 
@@ -33,7 +33,7 @@ class YoloNode(Node):
         self.declare_parameter('device', 'cpu')
         self.declare_parameter('batch_publish_interval_sec', 1.0)
         self.declare_parameter('minimum_box_area_ratio', 0.01)
-        self.declare_parameter('minimum_detection_frames', 3)
+        self.declare_parameter('minimum_detection_frames', 2)
         self.declare_parameter('reobserve_cooldown_sec', 90.0)
         self.declare_parameter('excluded_classes', ['tv', 'laptop', 'person', 'chair', 'refrigerator', 'bed'])
         self.declare_parameter('ignored_top_ratio', 0.10)
@@ -76,6 +76,8 @@ class YoloNode(Node):
         self.create_subscription(Odometry, '/odom', self.odom_callback, qos_profile_sensor_data)
         self.create_subscription(EncounterResult, '/first_encounter/result',
                                  self.encounter_callback, 10)
+        self.create_subscription(ObservationResult, '/observation/result',
+                                 self.observation_callback, 10)
 
         self.confidence = self.get_parameter('confidence').value
         self.process_every_n_frames = max(
@@ -164,6 +166,16 @@ class YoloNode(Node):
         # Suppress both successful and failed attempts to avoid retry loops.
         if message.detection_id.startswith(self.current_session_id + ':'):
             self.policy.handled(message.detection_id, time.monotonic())
+
+    def observation_callback(self, message):
+        if (message.success and self.current_session_id
+                and message.detection_id.startswith(self.current_session_id + ':')):
+            guarded = self.policy.observation_completed(
+                message.detection_id, time.monotonic())
+            if guarded:
+                self.get_logger().info(
+                    'Post-observation overlap guard active for 3s: '
+                    + message.detection_id)
 
     def scan_points_in_camera(self, image_message, width, height):
         info, scan = self.camera_info, self.scan
