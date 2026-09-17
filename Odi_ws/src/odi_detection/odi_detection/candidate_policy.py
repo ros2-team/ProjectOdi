@@ -47,19 +47,25 @@ class CandidatePolicy:
         output = []
         # Largest boxes first makes association independent of YOLO box order.
         for box, name in sorted(items, key=lambda item: -(item[0][2]-item[0][0])*(item[0][3]-item[0][1])):
-            # A label may flicker while the camera still sees the same box.
-            # Only bridge a recent, strongly overlapping, unambiguous label change.
+            # Class names may flicker after observation. Require reciprocal
+            # geometric uniqueness before transferring an identity across labels.
             matches = []
             cross_label = []
             for k in available:
-                previous = self.tracks[k]
+                previous = previous_tracks[k]
                 overlap = iou(box, previous['box'])
                 if previous['name'] == name:
                     matches.append((overlap, k))
-                elif overlap >= 0.6 and now - previous['seen'] <= 0.75:
-                    competing = sum(iou(other_box, previous['box']) >= 0.6
-                                    for other_box, _ in items)
-                    if competing == 1:
+                elif (overlap >= 0.3 and 0 <= now - previous['seen'] <= 3.0
+                      and name not in self.excluded
+                      and previous['name'] not in self.excluded):
+                    competing_boxes = sum(
+                        iou(other_box, previous['box']) >= 0.3
+                        for other_box, _ in items)
+                    competing_tracks = sum(
+                        iou(box, old['box']) >= 0.3
+                        for old in previous_tracks.values())
+                    if competing_boxes == 1 and competing_tracks == 1:
                         cross_label.append((overlap, k))
             if len(cross_label) == 1:
                 matches.extend(cross_label)
