@@ -39,6 +39,9 @@ class YoloNode(Node):
         self.declare_parameter('ignored_top_ratio', 0.10)
         self.declare_parameter('maximum_observation_distance', 2.0)
         self.declare_parameter('camera_info_topic', '/camera/camera_info')
+        self.declare_parameter('recent_detection_guards_enabled', False)
+        self.recent_detection_guards_enabled = bool(
+            self.get_parameter('recent_detection_guards_enabled').value)
         self.policy = CandidatePolicy(
             min_area=float(self.get_parameter('minimum_box_area_ratio').value),
             min_hits=max(1, int(self.get_parameter('minimum_detection_frames').value)),
@@ -196,7 +199,8 @@ class YoloNode(Node):
         if self.frame_count % self.process_every_n_frames != 0:
             return
 
-        view_ready = self.turn_gate.allowed(time.monotonic())
+        view_ready = (not self.recent_detection_guards_enabled
+                      or self.turn_gate.allowed(time.monotonic()))
         frame = self.bridge.compressed_imgmsg_to_cv2(
             message,
             'bgr8',
@@ -218,7 +222,9 @@ class YoloNode(Node):
         names = [self.model.names[int(box.cls[0])] for box in result.boxes]
         pose = self.odom_pose if now-self.odom_received <= 1.0 else None
         associated = self.policy.update(list(zip(boxes, names)), width, height, now, pose,
-                                        turn_link=self.turn_gate.can_link(now))
+                                        turn_link=(self.recent_detection_guards_enabled
+                                                   and self.turn_gate.can_link(now)),
+                                        label_link=self.recent_detection_guards_enabled)
         if not view_ready:
             # Track identity keeps updating, but turning frames cannot establish stability.
             for track in self.policy.tracks.values():
@@ -270,7 +276,8 @@ class YoloNode(Node):
         if self.mission_state != 'EXPLORING' or not self.current_session_id:
             return
 
-        if not view_ready or not self.turn_gate.allowed(time.monotonic()):
+        if self.recent_detection_guards_enabled and (
+                not view_ready or not self.turn_gate.allowed(time.monotonic())):
             for track in self.policy.tracks.values():
                 track['hits'] = 0
             return

@@ -37,7 +37,7 @@ class CandidatePolicy:
         self.history = {}
         self.recent = []
 
-    def update(self, items, width, height, now, pose=None, *, turn_link=False):
+    def update(self, items, width, height, now, pose=None, *, turn_link=False, label_link=True):
         self.tracks = {k: v for k, v in self.tracks.items() if now-v['seen'] <= 3.0}
         self.recent = [r for r in self.recent if now-r['time'] < self.cooldown]
         self.history = {k: v for k, v in self.history.items() if now-v['seen'] < 120.0}
@@ -56,7 +56,7 @@ class CandidatePolicy:
                 overlap = iou(box, previous['box'])
                 if previous['name'] == name:
                     matches.append((overlap, k))
-                elif (overlap >= 0.3 and 0 <= now - previous['seen'] <= 3.0
+                elif (label_link and overlap >= 0.3 and 0 <= now - previous['seen'] <= 3.0
                       and name not in self.excluded
                       and previous['name'] not in self.excluded):
                     competing_boxes = sum(
