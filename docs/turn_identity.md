@@ -12,7 +12,11 @@ handled flag are retained. Ambiguous cases receive a new ID normally.
 Turn eligibility requires fresh odometry (within 1 second) and a measured turn
 within 2 seconds. Startup, invalid odometry and odometry gaps do not enable it.
 Existing turn thresholds (0.20/0.10 rad/s) and observation settling (0.5 seconds)
-are unchanged. Tracking continues while new observations are paused.
+are unchanged. `turn_identity_enabled: true` enables this association independently
+of `recent_detection_guards_enabled`. The latter remains `false`: turning or
+missing odometry does not globally pause observation candidates. Missing/stale
+odometry only disables the turn association fallback. Set `turn_identity_enabled`
+to `false` and restart the detector to disable this fallback independently.
 The 90-second recent-encounter policy, ROI and exclusions are unchanged.
 
 This is a heuristic, not appearance recognition: a different same-class object

@@ -25,6 +25,7 @@ class GuardBypassTests(unittest.TestCase):
     def test_label_only_blocks_repeat_but_allows_new_object_without_turn_gate(self):
         f = lifecycle.DetectorTests(); f.setUp()
         n = f.node
+        n.turn_identity_enabled = False
         n.label_identity_enabled = True
         n.recent_detection_guards_enabled = False
         n.turn_gate = TurnGate()  # No odometry: turn gate itself remains closed.

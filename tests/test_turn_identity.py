@@ -87,3 +87,48 @@ class TurnIdentityTests(unittest.TestCase):
         self.assertTrue(n.policy.tracks[key]['handled'])
         f.mission('EXPLORING', 'two'); f.frame(1.6)
         n.batch_publisher.publish.assert_called_once()
+
+    def test_identity_restored_without_blocking_other_candidates(self):
+        f = lifecycle.DetectorTests(); f.setUp()
+        n = f.node
+        n.batch_publish_interval_sec = 0.0
+        n.recent_detection_guards_enabled = False
+        n.turn_identity_enabled = True
+        n.turn_gate = TurnGate()
+        f.mission('EXPLORING')
+        f.frame(.6)  # Missing odometry does not block new detections.
+        key = next(iter(n.policy.tracks))
+        n.policy.handled(key, .6)
+        n.batch_publisher.publish.reset_mock()
+        xy = f.result.boxes[0].xyxy[0]
+        xy.cpu.return_value.numpy.return_value.astype.return_value = list(RIGHT)
+        n.turn_gate.update(.6, .8)
+        f.frame(.8)
+        self.assertEqual(list(n.policy.tracks), [key])
+        self.assertTrue(n.policy.tracks[key]['handled'])
+        n.batch_publisher.publish.assert_not_called()
+        # A different, non-overlapping class is still eligible during the turn.
+        n.model.names[0] = 'bottle'
+        xy.cpu.return_value.numpy.return_value.astype.return_value = list(LEFT)
+        n.turn_gate.update(.6, 1.0)
+        f.frame(1.0)
+        n.batch_publisher.publish.assert_called_once()
+
+    def test_identity_can_be_disabled_independently(self):
+        f = lifecycle.DetectorTests(); f.setUp()
+        n = f.node
+        n.batch_publish_interval_sec = 0.0
+        n.recent_detection_guards_enabled = False
+        n.turn_identity_enabled = False
+        n.turn_gate = TurnGate()
+        f.mission('EXPLORING')
+        f.frame(.6)
+        key = next(iter(n.policy.tracks))
+        n.policy.handled(key, .6)
+        n.batch_publisher.publish.reset_mock()
+        xy = f.result.boxes[0].xyxy[0]
+        xy.cpu.return_value.numpy.return_value.astype.return_value = list(RIGHT)
+        n.turn_gate.update(.6, .8)
+        f.frame(.8)
+        n.batch_publisher.publish.assert_called_once()
+        self.assertGreater(len(n.policy.tracks), 1)

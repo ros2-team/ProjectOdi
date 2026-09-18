@@ -173,6 +173,7 @@ class DetectorTests(unittest.TestCase):
         self.node.bridge.compressed_imgmsg_to_cv2.return_value = NS(shape=(240, 320, 3))
         self.node.policy = CandidatePolicy(min_hits=1)
         self.node.label_identity_enabled = True
+        self.node.turn_identity_enabled = True
         self.node.recent_detection_guards_enabled = True
         self.node.turn_gate = Mock()
         self.node.turn_gate.allowed.return_value = True
