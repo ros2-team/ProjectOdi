@@ -43,14 +43,13 @@ class CandidatePolicy:
         self.tracks = {k: v for k, v in self.tracks.items() if now-v['seen'] <= 3.0}
         self.recent = [r for r in self.recent if now-r['time'] < self.cooldown]
         self.history = {k: v for k, v in self.history.items() if now-v['seen'] < 120.0}
-        self.completion_guards = [g for g in self.completion_guards
-                                  if now < g['until']]
         items = list(items)
+        guarded_items = self._follow_completion_guards(items, now)
         previous_tracks = {k: dict(v) for k, v in self.tracks.items()}
         available = set(self.tracks)
         output = []
         # Largest boxes first makes association independent of YOLO box order.
-        for box, name in sorted(items, key=lambda item: -(item[0][2]-item[0][0])*(item[0][3]-item[0][1])):
+        for item_index, (box, name) in sorted(enumerate(items), key=lambda item: -(item[1][0][2]-item[1][0][0])*(item[1][0][3]-item[1][0][1])):
             # Class names may flicker after observation. Require reciprocal
             # geometric uniqueness before transferring an identity across labels.
             matches = []
@@ -104,15 +103,14 @@ class CandidatePolicy:
             blocked = track['handled'] or any(
                 r['name'] == name and self._same_view(r, box, pose)
                 for r in self.recent)
-            blocked = blocked or any(iou(g['box'], box) >= 0.3
-                                     for g in self.completion_guards)
+            blocked = blocked or item_index in guarded_items
             eligible = (self.in_observation_view(box, name, height) and area >= self.min_area
                         and track['hits'] >= self.min_hits and not blocked)
             output.append((box, name, key, eligible))
         return output
 
     def observation_completed(self, key, now):
-        """Freeze a fresh final box for three seconds, without extending ID cooldowns."""
+        """Follow a fresh final box for at most ten seconds, independently of labels."""
         if key in self.completed_ids:
             return False
         self.completed_ids.add(key)
@@ -120,8 +118,47 @@ class CandidatePolicy:
         # Never reuse the first-encounter box after a long observation or target loss.
         if track is None or not 0 <= now-track['seen'] <= 1.0:
             return False
-        self.completion_guards.append(dict(box=tuple(track['box']), until=now+3.0))
+        self.completion_guards.append(dict(box=tuple(track['box']),
+                                          seen=track['seen'], until=now+10.0))
         return True
+
+    @staticmethod
+    def _nearby_box(previous, current):
+        """Bound center drift and size change relative to the previous box."""
+        pw, ph = previous[2]-previous[0], previous[3]-previous[1]
+        cw, ch = current[2]-current[0], current[3]-current[1]
+        if min(pw, ph, cw, ch) <= 0:
+            return False
+        dx = ((current[0]+current[2])-(previous[0]+previous[2])) / (2*pw)
+        dy = ((current[1]+current[3])-(previous[1]+previous[3])) / (2*ph)
+        return (.5 <= cw/pw <= 2.0 and .5 <= ch/ph <= 2.0
+                and math.hypot(dx, dy) <= .5)
+
+    def _follow_completion_guards(self, items, now):
+        guards = [g for g in self.completion_guards
+                  if now < g['until'] and 0 <= now-g['seen'] < 2.0]
+        proposals = []
+        for g in guards:
+            strong = [i for i, (box, _) in enumerate(items)
+                      if iou(g['box'], box) >= .3]
+            # Prefer overlap; use bounded geometry only when overlap fails.
+            proposals.append(strong or [i for i, (box, _) in enumerate(items)
+                                        if self._nearby_box(g['box'], box)])
+        retained, blocked = [], set()
+        for g, candidates in zip(guards, proposals):
+            if not candidates:
+                retained.append(g)  # Brief absence; never block an old region.
+                continue
+            if len(candidates) != 1:
+                continue  # Ambiguity ends this temporary association.
+            index = candidates[0]
+            if sum(index in other for other in proposals) != 1:
+                continue
+            g.update(box=tuple(items[index][0]), seen=now)
+            retained.append(g)
+            blocked.add(index)
+        self.completion_guards = retained
+        return blocked
 
     @staticmethod
     def _same_view(record, box, pose):

@@ -25,8 +25,42 @@ class CompletionGuardTests(unittest.TestCase):
         self.assertNotEqual(rows[0][2],key)
         # Repeated result must not extend the completion window.
         self.assertFalse(p.observation_completed(key,2))
-        self.assertFalse(p.update([(B,'book')],320,240,3.5)[0][3])
-        self.assertTrue(p.update([(B,'book')],320,240,3.61)[0][3])
+        for t in (1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5):
+            self.assertFalse(p.update([(B,'book')],320,240,t)[0][3])
+        self.assertTrue(p.update([(B,'book')],320,240,10.61)[0][3])
+
+    def test_label_and_box_size_change_follow_latest_box(self):
+        p = CandidatePolicy(min_hits=1)
+        key = p.update([(A,'bottle')],320,240,0)[0][2]
+        p.observation_completed(key,.1)
+        # IoU < .3; center and size still satisfy the bounded fallback.
+        shifted = (70,80,110,160)
+        self.assertFalse(p.update([(shifted,'phone'),(B,'cup')],320,240,.2,
+                                  label_link=False)[1][3])
+        self.assertEqual(p.completion_guards[0]['box'],shifted)
+        moved = (85,80,125,160)
+        rows = p.update([(moved,'book'),(B,'cup')],320,240,.4,label_link=False)
+        by_name = {name: eligible for _,name,_,eligible in rows}
+        self.assertFalse(by_name['book'])
+        self.assertTrue(by_name['cup'])
+        self.assertEqual(p.completion_guards[0]['box'],moved)
+
+    def test_two_second_absence_releases_guard(self):
+        p = CandidatePolicy(min_hits=1)
+        key = p.update([(A,'bottle')],320,240,0)[0][2]
+        p.observation_completed(key,.1)
+        p.update([],320,240,1)
+        self.assertTrue(p.update([(A,'book')],320,240,2,label_link=False)[0][3])
+        self.assertEqual(p.completion_guards,[])
+
+    def test_ambiguous_boxes_release_guard(self):
+        p = CandidatePolicy(min_hits=1)
+        key = p.update([(A,'bottle')],320,240,0)[0][2]
+        p.observation_completed(key,.1)
+        rows = p.update([(A,'book'),((12,40,92,200),'cup')],320,240,.2,
+                        label_link=False)
+        self.assertTrue(all(row[3] for row in rows))
+        self.assertEqual(p.completion_guards,[])
 
     def test_stale_or_missing_target_does_not_block_old_screen_region(self):
         p = CandidatePolicy(min_hits=1)

@@ -178,7 +178,7 @@ class YoloNode(Node):
                 message.detection_id, time.monotonic())
             if guarded:
                 self.get_logger().info(
-                    'Post-observation overlap guard active for 3s: '
+                    'Post-observation tracking guard active for up to 10s (2s lost timeout): '
                     + message.detection_id)
 
     def scan_points_in_camera(self, image_message, width, height):
