@@ -969,6 +969,7 @@ Rules:
             self.get_logger().info(
                 '\n ::Observation completed::'
                 f'\n detection_id = {observation.detection_id}'
+                f'\n detector_class = {observation.detector_class}'
                 f'\n memory_id = {memory_id}'
                 f'\n diary_summary = {observation.diary_summary}'
             )
@@ -1011,6 +1012,7 @@ Rules:
 
         observation = ObservationResult()
         observation.detection_id = encounter.detection_id
+        observation.detector_class = encounter.detector_class
         observation.success = True
         observation.image_paths = [encounter.image_path]
         if observation_image_path != encounter.image_path:

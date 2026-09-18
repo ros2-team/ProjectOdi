@@ -1,5 +1,6 @@
 # 호기심 판단에 사용할 기본 정보
 string  detection_id
+string  detector_class
 bool    success
 
 string  image_path

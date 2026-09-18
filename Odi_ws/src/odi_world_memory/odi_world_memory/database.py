@@ -50,7 +50,39 @@ class Database:
                 'Database connection test returned no result.'
             )
 
+        self.ensure_detector_class_column()
         return result['database_name']
+
+    def ensure_detector_class_column(self):
+        """Add the detector lookup key to an existing development database."""
+        connection = self.connect()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) AS column_count
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = %s
+                      AND TABLE_NAME = 'observations'
+                      AND COLUMN_NAME = 'detector_class'
+                    """,
+                    (self.database,),
+                )
+                row = cursor.fetchone()
+                if not row or int(row['column_count']) == 0:
+                    cursor.execute(
+                        """
+                        ALTER TABLE observations
+                        ADD COLUMN detector_class VARCHAR(100) NULL
+                        AFTER detection_id
+                        """
+                    )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     def save_observation(self, session_id, observation):
         new_memory_id = str(uuid.uuid4())
@@ -81,6 +113,7 @@ class Database:
                         memory_id,
                         session_id,
                         detection_id,
+                        detector_class,
                         success,
 
                         object_name,
@@ -101,12 +134,13 @@ class Database:
                         failure_reason
                     )
                     VALUES (
-                        %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s,
                         %s, %s, %s
                     )
                     ON DUPLICATE KEY UPDATE
+                        detector_class = VALUES(detector_class),
                         success = VALUES(success),
 
                         object_name = VALUES(object_name),
@@ -135,6 +169,7 @@ class Database:
                         new_memory_id,
                         session_id,
                         observation.detection_id,
+                        observation.detector_class,
                         observation.success,
 
                         label.object_name,
@@ -279,6 +314,7 @@ class Database:
                         memory_id,
                         session_id,
                         detection_id,
+                        detector_class,
                         success,
 
                         object_name,
@@ -328,10 +364,11 @@ class Database:
 
     def get_similar_observations(
             self,
-            object_name,
+            detector_class,
             max_results,
     ):
 
+        normalized_class = (detector_class or '').strip().lower()
         connection = self.connect()
 
         try:
@@ -342,6 +379,7 @@ class Database:
                         memory_id,
                         session_id,
                         detection_id,
+                        detector_class,
                         success,
 
                         object_name,
@@ -363,12 +401,12 @@ class Database:
                         failure_reason
 
                     FROM observations
-                    WHERE object_name = %s
+                    WHERE LOWER(TRIM(detector_class)) = %s
                     ORDER BY stored_at DESC
                     LIMIT %s
                     """,
                     (
-                        object_name,
+                        normalized_class,
                         max_results,
                     ),
                 )

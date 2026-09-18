@@ -136,6 +136,11 @@ class WorldMemoryNode(Node):
             response.message = 'detection_id is empty'
             return response
 
+        if not observation.detector_class.strip():
+            response.success = False
+            response.message = 'detector_class is empty'
+            return response
+
         if not observation.success:
             response.success = False
             response.message = (
@@ -267,9 +272,10 @@ class WorldMemoryNode(Node):
             response.message = "Encounter result was not successful"
             return response
 
-        if not encounter.label.object_name:
+        if not encounter.detector_class.strip():
             response.success = False
-            response.message = "object_name is empty"
+            response.message = "detector_class is empty"
+            return response
 
         max_results = request.max_results
 
@@ -280,7 +286,7 @@ class WorldMemoryNode(Node):
 
         try:
             records = self.database.get_similar_observations(
-                encounter.label.object_name,
+                encounter.detector_class,
                 max_results,
             )
 
@@ -301,6 +307,7 @@ class WorldMemoryNode(Node):
                 )
             self.get_logger().info(
                 f'similar observations requested : '
+                f'detector_class = {encounter.detector_class}, '
                 f'object = {encounter.label.object_name}, count = {len(records)}'
             )
 
@@ -326,6 +333,7 @@ class WorldMemoryNode(Node):
         stored.session_id = record['session_id']
 
         observation.detection_id = record['detection_id']
+        observation.detector_class = record['detector_class'] or ''
         observation.success = bool(record['success'])
 
         observation.image_paths = record['image_paths']

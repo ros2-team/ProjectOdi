@@ -31,8 +31,8 @@ class CuriosityEngineNode(Node):
     이 노드는 더 이상 DB에 직접 접속하지 않는다.
     DB 접근은 World Memory가 전담하고, 여기서는 서비스로 물어본다.
 
-    World Memory는 object_name이 일치하는 기록만 돌려주므로,
-    "선풍기를 봤으면 과거의 선풍기들만" 비교 대상이 된다.
+    World Memory는 detector_class(YOLO class)가 일치하는 기록을 돌려준다.
+    생성형 AI의 object_name은 조회 키가 아니라 특징 비교와 표현에 사용한다.
     """
 
     def __init__(self):
@@ -73,6 +73,7 @@ class CuriosityEngineNode(Node):
 
         self.get_logger().info(
             f'[SERVICE] 평가 요청: detection_id={encounter.detection_id}, '
+            f'detector_class={encounter.detector_class}, '
             f'object={label.object_name}'
         )
 
@@ -165,10 +166,10 @@ class CuriosityEngineNode(Node):
 
     def get_memory(self, encounter, candidate: ObjectCandidate):
         """
-        1) World Memory에 같은 이름의 과거 기록을 요청한다
-        2) 응답 중 가장 닮은 기록을 찾아 similarity를 구한다
-        3) 임계값을 넘으면 '같은 개체'로 보고,
-           가장 최근 기록(배열 0번)을 change 비교 기준으로 삼는다
+        1) World Memory에 같은 detector_class(YOLO class)의 과거 기록을 요청한다
+        2) 색/재질/형태/상태/특징으로 가장 닮은 기록을 찾아 similarity를 구한다
+        3) 임계값을 넘은 기록만 같은 개체 후보로 보고,
+           그중 가장 최근 기록을 change 비교 기준으로 삼는다
 
         3번이 중요하다. best match는 '가장 닮은 기록'이라
         차이가 최소가 되도록 선택된 것이므로
@@ -209,10 +210,13 @@ class CuriosityEngineNode(Node):
         # --- best match 탐색 ---
         best_similarity = 0.0
         best_record = None
+        identity_matches = []
 
         for stored in records:
             record = self.stored_to_memory(stored)
             similarity = self.calculator.calculate_similarity(candidate, record)
+            if similarity >= W.IDENTITY_THRESHOLD:
+                identity_matches.append(record)
 
             self.get_logger().debug(
                 f'[MEMORY] {stored.memory_id} sim={similarity:.2f}'
@@ -238,11 +242,11 @@ class CuriosityEngineNode(Node):
             )
 
         # --- 기존 개체 ---
-        # World Memory 응답은 stored_at DESC 정렬이므로
-        # 배열의 0번이 가장 최근 기록이다.
-        latest = self.stored_to_memory(records[0])
+        # detector_class는 넓은 분류라 서로 다른 개체가 함께 조회될 수 있다.
+        # stored_at DESC 순서를 유지한 identity match 중 가장 최근 기록을 쓴다.
+        latest = identity_matches[0]
         latest.is_new = False
-        latest.visit_count = compared_record_count
+        latest.visit_count = len(identity_matches)
         latest.similarity = best_similarity
         latest.compared_record_count = compared_record_count
 

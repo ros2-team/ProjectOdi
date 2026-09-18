@@ -276,6 +276,7 @@ Rules:
 
             encounter = EncounterResult()
             encounter.detection_id = target.detection_id
+            encounter.detector_class = target.class_name.strip().lower()
             encounter.success = True
             encounter.image_path = image_path
             encounter.label = self.build_label(
@@ -295,6 +296,7 @@ Rules:
             self.get_logger().info(
                 '::FirstEncounter completed::\n'
                 f'detection_id = {encounter.detection_id}\n'
+                f'detector_class = {encounter.detector_class}\n'
                 f'object_name = {encounter.label.object_name}\n'
                 f'image_path = {encounter.image_path}'
             )
