@@ -50,39 +50,7 @@ class Database:
                 'Database connection test returned no result.'
             )
 
-        self.ensure_detector_class_column()
         return result['database_name']
-
-    def ensure_detector_class_column(self):
-        """Add the detector lookup key to an existing development database."""
-        connection = self.connect()
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT COUNT(*) AS column_count
-                    FROM information_schema.COLUMNS
-                    WHERE TABLE_SCHEMA = %s
-                      AND TABLE_NAME = 'observations'
-                      AND COLUMN_NAME = 'detector_class'
-                    """,
-                    (self.database,),
-                )
-                row = cursor.fetchone()
-                if not row or int(row['column_count']) == 0:
-                    cursor.execute(
-                        """
-                        ALTER TABLE observations
-                        ADD COLUMN detector_class VARCHAR(100) NULL
-                        AFTER detection_id
-                        """
-                    )
-            connection.commit()
-        except Exception:
-            connection.rollback()
-            raise
-        finally:
-            connection.close()
 
     def save_observation(self, session_id, observation):
         new_memory_id = str(uuid.uuid4())
