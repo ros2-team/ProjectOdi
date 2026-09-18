@@ -11,7 +11,7 @@ class ScanTests(unittest.TestCase):
         n.session = 'normal-one'
         n.stage = stage
         n.p = dict(pan_home=84., tilt_home=65., pan_min=40., pan_max=140.,
-                   rest_sec=3., move_timeout_sec=30., track_timeout_sec=6.,
+                   rest_sec=3., move_timeout_sec=30., track_timeout_sec=6., look_sec=2.5,
                    image_width=320, image_height=240, confidence=.6,
                    pan_sign=-1., tilt_sign=1., tilt_min=0., tilt_max=100.)
         n.head = dict(pan=84, tilt=65)
@@ -76,6 +76,7 @@ class ScanTests(unittest.TestCase):
             self.assertEqual(n.stage, 'SCAN_' + side)
             n.tick()
             self.assertEqual(n.stage, 'LOOK_' + side)
+            self.assertAlmostEqual(n.deadline - normal.time.monotonic(), 2.5, delta=.1)
             n.deadline = normal.time.monotonic() - 1
             n.tick()
         self.assertEqual(n.stage, 'REST')
@@ -206,4 +207,3 @@ class ScanTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-

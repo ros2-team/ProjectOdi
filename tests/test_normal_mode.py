@@ -35,7 +35,7 @@ def object_at(x=160, size=60, identifier='normal-one:1', name='bottle'):
 
 class AttentionTests(unittest.TestCase):
     def test_stability_area_class_and_freshness(self):
-        p = Attention()
+        p = Attention(classes=('bottle', 'backpack', 'cup'), min_hits=3)
         for now in (0., .2):
             self.assertFalse(p.observe(object_at(), now))
         self.assertTrue(p.observe(object_at(), .4))
@@ -43,6 +43,31 @@ class AttentionTests(unittest.TestCase):
         self.assertIsNone(p.candidate(2.))
         self.assertFalse(p.observe(object_at(size=10), 2.))
         self.assertFalse(p.observe(object_at(name='tv'), 2.))
+
+    def test_default_accepts_other_classes_with_two_moderate_confidence_hits(self):
+        p = Attention()
+        obj = object_at(size=28, name='teddy bear')
+        obj.confidence = .4
+        self.assertFalse(p.observe(obj, 0.0))
+        self.assertTrue(p.observe(obj, .2))
+        self.assertIs(p.candidate(.3), obj)
+
+    def test_default_still_rejects_noise_and_unstable_hits(self):
+        for size, confidence in ((28, .34), (27, .9)):
+            p = Attention()
+            obj = object_at(size=size, name='teddy bear')
+            obj.confidence = confidence
+            for now in (0., .2, .4):
+                self.assertFalse(p.observe(obj, now))
+            self.assertIsNone(p.candidate(.4))
+        p = Attention()
+        self.assertFalse(p.observe(object_at(x=100), 0.))
+        self.assertFalse(p.observe(object_at(x=250), .2))
+
+    def test_explicit_class_filter_is_preserved(self):
+        p = Attention(classes=('bottle',))
+        for now in (0., .2, .4):
+            self.assertFalse(p.observe(object_at(name='teddy bear'), now))
 
     def test_cooldown_survives_detector_identity_change(self):
         p = Attention()

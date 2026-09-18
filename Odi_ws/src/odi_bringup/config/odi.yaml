@@ -65,9 +65,12 @@ normal_node:
   ros__parameters:
     image_width: 320
     image_height: 240
-    target_classes: [bottle, backpack, cup]
-    confidence: 0.6
-    minimum_area_ratio: 0.02
+    # Accept all classes passed by yolo_node's shared exclusion/ROI filter.
+    target_classes: ['*']
+    confidence: 0.35
+    minimum_area_ratio: 0.01
+    minimum_detection_frames: 2
+    look_sec: 2.5
     cooldown_sec: 60.0
     rest_sec: 3.0
     move_timeout_sec: 30.0

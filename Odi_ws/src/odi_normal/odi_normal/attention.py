@@ -2,17 +2,19 @@
 import math
 
 class Attention:
-    def __init__(self, width=320, height=240, classes=('bottle', 'backpack', 'cup'),
-                 confidence=0.6, minimum_area=0.02, cooldown=60.0):
+    def __init__(self, width=320, height=240, classes=('*',),
+                 confidence=0.35, minimum_area=0.01, cooldown=60.0, min_hits=2):
         self.width, self.height = width, height
         self.classes = set(classes)
         self.confidence, self.minimum_area, self.cooldown = confidence, minimum_area, cooldown
+        self.min_hits = max(1, int(min_hits))
         self.samples = {}
         self.handled = {}
         self.latest = None
 
     def observe(self, obj, now):
-        if (obj.class_name not in self.classes or not math.isfinite(obj.confidence)
+        # '*' accepts classes already filtered by YOLO's shared ROI/exclusion gate.
+        if (('*' not in self.classes and obj.class_name not in self.classes) or not math.isfinite(obj.confidence)
                 or obj.confidence < self.confidence
                 or obj.width <= 0 or obj.height <= 0
                 or not 0 <= obj.center_x < self.width or not 0 <= obj.center_y < self.height
@@ -27,7 +29,7 @@ class Attention:
             if math.hypot(obj.center_x-previous[2], obj.center_y-previous[3]) < self.width*.2:
                 count = previous[1]+1
         self.samples[obj.detection_id] = (now, count, obj.center_x, obj.center_y)
-        if count >= 3:
+        if count >= self.min_hits:
             self.latest = (now, obj)
             return True
         return False
@@ -52,4 +54,3 @@ def tracking_angles(obj, width, height, pan, tilt, pan_sign, tilt_sign,
     return (max(pan_limits[0], min(pan_limits[1], pan + pan_sign*step(px))),
             max(tilt_limits[0], min(tilt_limits[1], tilt + tilt_sign*step(py))),
             abs(px) < .1 and abs(py) < .1)
-

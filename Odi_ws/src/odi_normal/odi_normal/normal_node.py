@@ -23,6 +23,8 @@ class NormalParameters(TypedDict):
     target_classes: list[str]
     confidence: float
     minimum_area_ratio: float
+    minimum_detection_frames: int
+    look_sec: float
     cooldown_sec: float
     rest_sec: float
     move_timeout_sec: float
@@ -42,8 +44,9 @@ class NormalModeNode(Node):
     def __init__(self):
         super().__init__('normal_node')
         defaults = NormalParameters(image_width=320, image_height=240,
-                        target_classes=['bottle', 'backpack', 'cup'],
-                        confidence=0.6, minimum_area_ratio=0.02, cooldown_sec=60.0,
+                        target_classes=['*'],
+                        confidence=0.35, minimum_area_ratio=0.01, cooldown_sec=60.0,
+                        minimum_detection_frames=2, look_sec=2.5,
                         rest_sec=3.0, move_timeout_sec=30.0, track_timeout_sec=6.0,
                         pan_sign=-1.0, tilt_sign=1.0,
                         pan_min=40.0, pan_max=140.0, tilt_min=0.0, tilt_max=100.0,
@@ -66,6 +69,9 @@ class NormalModeNode(Node):
                 raise ValueError('Invalid head limits')
         if self.p['image_width'] <= 0 or self.p['image_height'] <= 0:
             raise ValueError('Image dimensions must be positive')
+        if (self.p['minimum_detection_frames'] < 1
+                or not math.isfinite(self.p['look_sec']) or self.p['look_sec'] <= 0):
+            raise ValueError('Detection frames and look duration must be positive')
         self.nav = ActionClient(self, Explore, '/explore')
         self.head_pub = self.create_publisher(String, '/head/command', 10)
         self.events = self.create_publisher(String, '/normal/event', 10)
@@ -100,7 +106,7 @@ class NormalModeNode(Node):
             self.session = msg.session_id
             self.attention = Attention(self.p['image_width'], self.p['image_height'],
                 self.p['target_classes'], self.p['confidence'], self.p['minimum_area_ratio'],
-                self.p['cooldown_sec'])
+                self.p['cooldown_sec'], self.p['minimum_detection_frames'])
             self.stop_requested = False
             self.fault_detail = ''
             self.head_touched = False
@@ -352,7 +358,7 @@ class NormalModeNode(Node):
                     # Admit only stable detections collected after the head settles.
                     self.attention.samples.clear()
                     self.attention.latest = None
-                    self.set_stage('LOOK_' + self.stage[5:], 1.5)
+                    self.set_stage('LOOK_' + self.stage[5:], self.p['look_sec'])
                 elif now > self.deadline:
                     self.fault('Camera scan acknowledgement timed out')
             elif self.stage.startswith('LOOK_'):
@@ -422,5 +428,3 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-
-
