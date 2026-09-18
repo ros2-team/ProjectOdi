@@ -38,7 +38,7 @@ class OdiBlackboard:
     system_ready : bool = False
 
     # Motivation status
-    motivation: int = 80
+    motivation: int = 65
     observation_count: int = 0
     minimum_observation_count: int = 3
 
@@ -77,7 +77,7 @@ class OdiBlackboard:
         self.battery_low = False
         self.system_ready = False
 
-        self.motivation = 80
+        self.motivation = 65
         self.observation_count = 0
         self.minimum_observation_count = 3
 
