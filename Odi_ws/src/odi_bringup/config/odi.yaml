@@ -48,6 +48,8 @@ yolo_node:
     minimum_box_area_ratio: 0.01
     minimum_detection_frames: 2
     reobserve_cooldown_sec: 90.0
+    post_observation_zone_radius: 0.5
+    post_observation_zone_sec: 45.0
     excluded_classes: ["tv", "laptop", "person", "chair", "refrigerator", "bed"]
     ignored_top_ratio: 0.10
     label_identity_enabled: true
