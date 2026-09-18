@@ -17,12 +17,16 @@ class CandidatePolicy:
     """
 
     def __init__(self, min_area=0.025, min_hits=2, cooldown=90.0,
-                 excluded=('tv', 'laptop', 'person', 'chair', 'refrigerator', 'bed'), ignored_top_ratio=0.0):
+                 excluded=('tv', 'laptop', 'person', 'chair', 'refrigerator', 'bed'),
+                 ignored_top_ratio=0.0, observation_zone_radius=0.5,
+                 observation_zone_sec=45.0):
         self.min_area = min_area
         self.min_hits = min_hits
         self.cooldown = cooldown
         self.excluded = set(excluded)
         self.ignored_top_ratio = max(0.0, min(1.0, float(ignored_top_ratio)))
+        self.observation_zone_radius = max(0.0, float(observation_zone_radius))
+        self.observation_zone_sec = max(0.0, float(observation_zone_sec))
         self.reset('')
 
     def in_observation_view(self, box, name, height):
@@ -37,11 +41,15 @@ class CandidatePolicy:
         self.history = {}
         self.recent = []
         self.completion_guards = []
+        self.observation_zones = []
         self.completed_ids = set()
 
     def update(self, items, width, height, now, pose=None, *, turn_link=False, label_link=True):
         self.tracks = {k: v for k, v in self.tracks.items() if now-v['seen'] <= 3.0}
         self.recent = [r for r in self.recent if now-r['time'] < self.cooldown]
+        self.observation_zones = [
+            zone for zone in self.observation_zones if now < zone['until']
+        ]
         self.history = {k: v for k, v in self.history.items() if now-v['seen'] < 120.0}
         items = list(items)
         guarded_items = self._follow_completion_guards(items, now)
@@ -103,24 +111,51 @@ class CandidatePolicy:
             blocked = track['handled'] or any(
                 r['name'] == name and self._same_view(r, box, pose)
                 for r in self.recent)
-            blocked = blocked or item_index in guarded_items
+            location_blocked = (
+                pose is not None
+                and any(
+                    math.hypot(
+                        pose[0] - zone['pose'][0],
+                        pose[1] - zone['pose'][1],
+                    ) <= self.observation_zone_radius
+                    for zone in self.observation_zones
+                )
+            )
+            blocked = blocked or item_index in guarded_items or location_blocked
             eligible = (self.in_observation_view(box, name, height) and area >= self.min_area
                         and track['hits'] >= self.min_hits and not blocked)
             output.append((box, name, key, eligible))
         return output
 
-    def observation_completed(self, key, now):
-        """Follow a fresh final box for at most ten seconds, independently of labels."""
+    def observation_completed(self, key, now, pose=None):
+        """Suppress the observation-finish area regardless of YOLO class changes."""
         if key in self.completed_ids:
             return False
         self.completed_ids.add(key)
+
+        zone_added = False
+        if (pose is not None
+                and self.observation_zone_radius > 0
+                and self.observation_zone_sec > 0):
+            self.observation_zones.append(dict(
+                pose=tuple(pose),
+                until=now + self.observation_zone_sec,
+            ))
+            zone_added = True
+
+        # Keep the short image-space guard as an additional fallback when the
+        # final detection is still fresh.
+        guard_added = False
         track = self.history.get(key)
-        # Never reuse the first-encounter box after a long observation or target loss.
-        if track is None or not 0 <= now-track['seen'] <= 1.0:
-            return False
-        self.completion_guards.append(dict(box=tuple(track['box']),
-                                          seen=track['seen'], until=now+10.0))
-        return True
+        if track is not None and 0 <= now-track['seen'] <= 1.0:
+            self.completion_guards.append(dict(
+                box=tuple(track['box']),
+                seen=track['seen'],
+                until=now + 10.0,
+            ))
+            guard_added = True
+
+        return zone_added or guard_added
 
     @staticmethod
     def _nearby_box(previous, current):
