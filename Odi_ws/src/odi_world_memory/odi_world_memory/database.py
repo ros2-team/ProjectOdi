@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 import pymysql
 from pymysql.cursors import DictCursor
+from odi_world_memory.object_names import memory_name_aliases
 
 class Database:
 
@@ -332,12 +333,14 @@ class Database:
             max_results,
     ):
 
+        aliases = memory_name_aliases(object_name)
+        placeholders = ', '.join(['%s'] * len(aliases))
         connection = self.connect()
 
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    """
+                    f"""
                     SELECT
                         memory_id,
                         session_id,
@@ -363,14 +366,12 @@ class Database:
                         failure_reason
 
                     FROM observations
-                    WHERE object_name = %s
+                    WHERE LOWER(TRIM(REPLACE(REPLACE(object_name, '_', ' '), '-', ' ')))
+                          IN ({placeholders})
                     ORDER BY stored_at DESC
                     LIMIT %s
                     """,
-                    (
-                        object_name,
-                        max_results,
-                    ),
+                    (*aliases, max_results),
                 )
 
                 records = cursor.fetchall()
@@ -466,6 +467,3 @@ class Database:
             timestamp,
             tz=timezone.utc,
         ).replace(tzinfo=None)
-
-
-

@@ -31,7 +31,7 @@ class CuriosityEngineNode(Node):
     이 노드는 더 이상 DB에 직접 접속하지 않는다.
     DB 접근은 World Memory가 전담하고, 여기서는 서비스로 물어본다.
 
-    World Memory는 object_name이 일치하는 기록만 돌려주므로,
+    World Memory는 object_name 또는 명시된 동의어가 일치하는 기록을 돌려주므로,
     "선풍기를 봤으면 과거의 선풍기들만" 비교 대상이 된다.
     """
 
@@ -165,10 +165,10 @@ class CuriosityEngineNode(Node):
 
     def get_memory(self, encounter, candidate: ObjectCandidate):
         """
-        1) World Memory에 같은 이름의 과거 기록을 요청한다
+        1) World Memory에 같은 이름 또는 동의어의 과거 기록을 요청한다
         2) 응답 중 가장 닮은 기록을 찾아 similarity를 구한다
         3) 임계값을 넘으면 '같은 개체'로 보고,
-           가장 최근 기록(배열 0번)을 change 비교 기준으로 삼는다
+           특징 유사도 임계값을 넘은 기록 중 가장 최근 것을 change 기준으로 삼는다
 
         3번이 중요하다. best match는 '가장 닮은 기록'이라
         차이가 최소가 되도록 선택된 것이므로
@@ -209,10 +209,13 @@ class CuriosityEngineNode(Node):
         # --- best match 탐색 ---
         best_similarity = 0.0
         best_record = None
+        identity_matches = []
 
         for stored in records:
             record = self.stored_to_memory(stored)
             similarity = self.calculator.calculate_similarity(candidate, record)
+            if similarity >= W.IDENTITY_THRESHOLD:
+                identity_matches.append(record)
 
             self.get_logger().debug(
                 f'[MEMORY] {stored.memory_id} sim={similarity:.2f}'
@@ -239,10 +242,10 @@ class CuriosityEngineNode(Node):
 
         # --- 기존 개체 ---
         # World Memory 응답은 stored_at DESC 정렬이므로
-        # 배열의 0번이 가장 최근 기록이다.
-        latest = self.stored_to_memory(records[0])
+        # 같은 이름/동의어여도 다른 물체일 수 있으므로 특징이 닮은 기록만 사용한다.
+        latest = identity_matches[0]
         latest.is_new = False
-        latest.visit_count = compared_record_count
+        latest.visit_count = len(identity_matches)
         latest.similarity = best_similarity
         latest.compared_record_count = compared_record_count
 
