@@ -35,6 +35,8 @@ class YoloNode(Node):
         self.declare_parameter('minimum_box_area_ratio', 0.01)
         self.declare_parameter('minimum_detection_frames', 2)
         self.declare_parameter('reobserve_cooldown_sec', 90.0)
+        self.declare_parameter('post_observation_zone_radius', 0.5)
+        self.declare_parameter('post_observation_zone_sec', 45.0)
         self.declare_parameter('excluded_classes', ['tv', 'laptop', 'person', 'chair', 'refrigerator', 'bed'])
         self.declare_parameter('ignored_top_ratio', 0.10)
         self.declare_parameter('maximum_observation_distance', 2.0)
@@ -55,6 +57,10 @@ class YoloNode(Node):
             cooldown=float(self.get_parameter('reobserve_cooldown_sec').value),
             excluded=self.get_parameter('excluded_classes').value,
             ignored_top_ratio=float(self.get_parameter('ignored_top_ratio').value),
+            observation_zone_radius=float(
+                self.get_parameter('post_observation_zone_radius').value),
+            observation_zone_sec=float(
+                self.get_parameter('post_observation_zone_sec').value),
         )
         self.maximum_observation_distance = float(
             self.get_parameter('maximum_observation_distance').value)
@@ -174,12 +180,16 @@ class YoloNode(Node):
     def observation_callback(self, message):
         if (message.success and self.current_session_id
                 and message.detection_id.startswith(self.current_session_id + ':')):
+            now = time.monotonic()
+            pose = self.odom_pose if now-self.odom_received <= 1.0 else None
             guarded = self.policy.observation_completed(
-                message.detection_id, time.monotonic())
+                message.detection_id, now, pose)
             if guarded:
                 self.get_logger().info(
-                    'Post-observation tracking guard active for up to 10s (2s lost timeout): '
-                    + message.detection_id)
+                    'Post-observation suppression active: '
+                    f'radius={self.policy.observation_zone_radius:.2f}m, '
+                    f'duration={self.policy.observation_zone_sec:.0f}s, '
+                    f'id={message.detection_id}')
 
     def scan_points_in_camera(self, image_message, width, height):
         info, scan = self.camera_info, self.scan
