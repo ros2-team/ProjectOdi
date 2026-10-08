@@ -1,0 +1,87 @@
+exploration_node:
+  ros__parameters:
+    map_topic: /map
+    robot_frame: base_footprint
+    navigation_action_name: /navigate_to_pose
+    minimum_frontier_size: 3
+    visited_goal_radius: 0.35
+    failed_goal_radius: 0.35
+    minimum_goal_distance: 0.5
+    maximum_goal_distance: 5.0
+    frontier_goal_offset: 0.3
+    frontier_empty_retry_count: 4
+    frontier_retry_delay_sec: 1.0
+    frontier_information_gain_weight: 1.0
+    frontier_distance_weight: 0.35
+    obstacle_clearance: 0.25
+    map_wait_timeout_sec: 10.0
+    navigation_server_timeout_sec: 5.0
+    navigation_timeout_sec: 120.0
+    maximum_navigation_failures: 5
+    roam_sampling_step: 5
+    roam_minimum_goal_distance: 1.0
+    roam_maximum_goal_distance: 3.0
+    roam_direction_weight: 0.8
+
+return_home_node:
+  ros__parameters:
+    map_frame: map
+    robot_frame: base_footprint
+    navigation_action_name: /navigate_to_pose
+    use_configured_home: false
+    home_x: 0.0
+    home_y: 0.0
+    home_yaw: 0.0
+    home_wait_timeout_sec: 10.0
+    navigation_server_timeout_sec: 5.0
+    navigation_timeout_sec: 180.0
+    home_arrival_radius: 0.3
+    home_arrival_hold_sec: 0.8
+
+yolo_node:
+  ros__parameters:
+    model_path: yolov8n.pt
+    confidence: 0.35
+    process_every_n_frames: 3
+    lost_frame_threshold: 30
+    batch_publish_interval_sec: 1.0
+    minimum_box_area_ratio: 0.01
+    minimum_detection_frames: 2
+    reobserve_cooldown_sec: 90.0
+    post_observation_zone_radius: 0.3
+    post_observation_zone_sec: 20.0
+    excluded_classes: ["tv", "laptop", "person", "chair", "refrigerator", "bed"]
+    ignored_top_ratio: 0.10
+    label_identity_enabled: true
+    turn_identity_enabled: true
+    recent_detection_guards_enabled: false
+    observation_turn_start_rad_s: 0.20
+    observation_turn_stop_rad_s: 0.10
+    observation_settle_sec: 0.5
+    maximum_observation_distance: 2.0
+    camera_info_topic: /camera/camera_info
+    device: cpu
+normal_node:
+  ros__parameters:
+    image_width: 320
+    image_height: 240
+    # Accept all classes passed by yolo_node's shared exclusion/ROI filter.
+    target_classes: ['*']
+    confidence: 0.35
+    minimum_area_ratio: 0.01
+    minimum_detection_frames: 2
+    look_sec: 2.5
+    cooldown_sec: 60.0
+    rest_sec: 3.0
+    move_timeout_sec: 30.0
+    track_timeout_sec: 6.0
+    # Calibrate signs, neutral positions and limits on the actual mount.
+    pan_sign: -1.0
+    tilt_sign: 1.0
+    pan_home: 84.0
+    tilt_home: 70.0
+    pan_min: 40.0
+    pan_max: 140.0
+    tilt_min: 0.0
+    tilt_max: 100.0
+    nod_degrees: 6.0

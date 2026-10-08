@@ -30,6 +30,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GetSimilarObservations.srv"
   "srv/SaveDiary.srv"
   "srv/SaveObservation.srv"
+  "srv/PrepareMapping.srv"
+  "srv/SetHomePose.srv"
 
 
   "action/ObserveObject.action"

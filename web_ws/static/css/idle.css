@@ -1,0 +1,345 @@
+/* ============================================================
+   대기 화면 (mission = IDLE)
+
+   ★ 이 파일은 odi.css 에 의존하지 않는다.
+     폰트·배경·버튼·링크까지 전부 여기서 정한다.
+     odi.css 가 로드되든 안 되든 화면이 무너지지 않는다.
+
+   ★ 색
+       #101A18  배경 (짙은 녹회색)
+       #F0A649  주황  — exploring.js 의 관찰 마커·의욕 게이지와 같은 값
+       #8DA49F  세이지 — 보조 텍스트
+       #E9EFEC  밝은 회색 — 본문
+       #D9736A  배터리 부족
+
+     ★ 주황을 시작 버튼에만 쓴다.
+       탐험 화면은 정보가 빽빽해서 대비가 세야 하지만,
+       대기 화면은 시작 버튼 하나만 도드라지면 된다.
+       나머지는 전부 낮은 채도로 눌러둔다.
+   ============================================================ */
+
+:root{
+  --odi-bg:     #101A18;
+  --odi-accent: #F0A649;
+  --odi-muted:  #8DA49F;
+  --odi-paper:  #E9EFEC;
+  --odi-low:    #D9736A;
+  --odi-line:   rgba(141,164,159,.20);
+}
+
+/* ── 페이지 바탕 ─────────────────────────────────────────
+   ★ odi.css 가 이미 body 배경을 정하고 있다면 이 블록만 지우면 된다. */
+
+body{
+  margin: 0;
+  background: var(--odi-bg);
+  color: var(--odi-paper);
+  font-family: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR",
+               system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 전체 배치 ───────────────────────────────────────────
+   폭을 380px 로 묶는다. 넓게 퍼뜨리면 시선이 흩어져서
+   시작 버튼이 '여러 요소 중 하나'가 된다. */
+
+.idle{
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  max-width: 380px;
+  margin: 0 auto;
+  padding: 48px 20px 72px;
+  text-align: center;
+}
+
+.idle *,
+.idle *::before,
+.idle *::after{ box-sizing: border-box; }
+
+/* 로고 점. 대기 중에도 살아 있다는 아주 작은 신호. */
+.idle .mark{
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(240,166,73,.45);
+  border-radius: 50%;
+}
+
+.idle .mark span{
+  display: block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--odi-accent);
+}
+
+.idle h1{
+  margin: 0;
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  color: var(--odi-paper);
+}
+
+/* ── 카메라 ──────────────────────────────────────────────
+   대기 화면에서 유일하게 움직이는 것.
+   "로봇이 살아 있다"를 한 컷으로 증명하는 자리라 시선을 여기 준다. */
+
+.idle .watch{
+  width: 100%;
+  border: 1px solid var(--odi-line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(141,164,159,.05);
+}
+
+.idle .lens{
+  aspect-ratio: 4 / 3;
+  display: grid;
+  place-items: center;
+  background: #0B1211;
+}
+
+.idle .lens img{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.idle .lens .wait{
+  font-size: 13px;
+  color: var(--odi-muted);
+  opacity: .8;
+}
+
+.idle .watchfoot{
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 9px 12px;
+  font-size: 12px;
+  color: var(--odi-muted);
+}
+
+/* ── 배터리 · 온도 · 습도 ────────────────────────────────
+   세 칸을 같은 폭으로 두는 이유 : 온습도가 붙었을 때
+   레이아웃이 흔들리지 않게 하려는 것이다. */
+
+.idle .vitals{
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: 100%;
+}
+
+.idle .vital{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 11px 12px 12px;
+  border: 1px solid rgba(141,164,159,.22);
+  border-radius: 11px;
+  text-align: left;
+}
+
+.idle .vital .k{
+  font-size: 11px;
+  color: var(--odi-muted);
+}
+
+.idle .vital .v{
+  font-size: 19px;
+  line-height: 1.1;
+  color: var(--odi-paper);
+  font-variant-numeric: tabular-nums;   /* 숫자가 바뀌어도 폭이 안 흔들린다 */
+}
+
+.idle .mono{
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+/* 배터리 막대 */
+.idle .vital .bar{
+  display: block;
+  width: 100%;
+  height: 3px;
+  margin-top: 3px;
+  border-radius: 2px;
+  background: rgba(141,164,159,.20);
+  overflow: hidden;
+}
+
+.idle .vital .bar i{
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: var(--odi-accent);
+  transition: width .6s ease;
+}
+
+.idle .vital.low .v{ color: var(--odi-low); }
+.idle .vital.low .bar i{ background: var(--odi-low); }
+
+/* 충전 중에는 막대가 천천히 숨쉰다.
+   유일한 자동 모션이라 '대기 중'이라는 상태 자체가 읽힌다. */
+.idle .vital.charging .bar i{ animation: odi-charge 1.9s ease-in-out infinite; }
+
+@keyframes odi-charge{
+  0%, 100% { opacity: .45; }
+  50%      { opacity: 1; }
+}
+
+/* ── 아직 준비 안 된 칸 (온도 · 습도) ────────────────────
+   ★ "준비 중" 같은 라벨을 붙이지 않는다.
+     미완성이라고 써 붙이면 그게 화면에서 제일 눈에 띄는 것이 된다.
+     흐린 점선으로 두면 '아직 없구나'가 저절로 읽힌다. */
+
+.idle .vital.soon{
+  border-style: dashed;
+  border-color: rgba(141,164,159,.14);
+}
+
+.idle .vital.soon .k,
+.idle .vital.soon .v{ color: rgba(141,164,159,.38); }
+
+/* ── 시작 버튼 ───────────────────────────────────────────
+   화면에서 유일하게 꽉 채워진 면. 주황을 여기에만 쓴다. */
+
+.idle .start{
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  border-radius: 12px;
+  background: var(--odi-accent);
+  color: #2A1B08;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: .01em;
+  cursor: pointer;
+  transition: filter .15s ease, transform .1s ease;
+}
+
+.idle .start:hover:not([disabled]){ filter: brightness(1.07); }
+.idle .start:active:not([disabled]){ transform: scale(.985); }
+
+.idle .start[disabled]{
+  background: rgba(141,164,159,.16);
+  color: rgba(233,239,236,.42);
+  cursor: not-allowed;
+}
+
+/* 출발 조건 한 줄.
+   min-height 로 자리를 미리 잡아 문구가 바뀔 때 아래가 안 밀린다. */
+.idle .gate{
+  margin: -12px 0 0;
+  min-height: 1.3em;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--odi-muted);
+}
+
+/* ── 지난 일기 ───────────────────────────────────────────
+   시작 버튼이 주인공이므로 여기는 최대한 조용하게.
+   제목도 작게, 목록은 밑줄 없이 한 줄씩 눕힌다. */
+
+.idle .past{
+  width: 100%;
+  margin-top: 6px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(141,164,159,.14);
+  text-align: left;
+}
+
+.idle .past h2{
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--odi-muted);
+}
+
+.idle .past a{
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 2px;
+  border-radius: 7px;
+  color: rgba(233,239,236,.82);
+  font-size: 13px;
+  text-decoration: none;      /* ★ 기본 파란 밑줄 링크를 끈다 */
+  transition: background .15s ease;
+}
+
+.idle .past a:hover{ background: rgba(141,164,159,.08); }
+.idle .past a:visited{ color: rgba(233,239,236,.82); }
+
+.idle .past a .d{
+  flex: none;
+  color: var(--odi-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.idle .past a .t{
+  flex: 1;
+  min-width: 0;               /* ★ 없으면 긴 문장이 옆 칸을 밀어낸다 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.idle .past a .n{
+  flex: none;
+  color: var(--odi-muted);
+  font-size: 12px;
+}
+
+/* ── 접근성 ──────────────────────────────────────────────
+   키보드 초점이 보여야 하고, 모션을 줄인 사용자에겐 안 움직인다. */
+
+.idle .start:focus-visible,
+.idle .past a:focus-visible{
+  outline: 2px solid var(--odi-accent);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce){
+  .idle .vital.charging .bar i{ animation: none; opacity: 1; }
+  .idle .vital .bar i,
+  .idle .start{ transition: none; }
+}
+
+/* ── 좁은 화면 ───────────────────────────────────────────
+   폰으로 볼 때. 세 칸이 찌그러지므로 배터리를 한 줄로 뺀다. */
+
+@media (max-width: 380px){
+  .idle{ padding: 32px 16px 56px; }
+  .idle .vitals{ grid-template-columns: 1fr 1fr; }
+  .idle .vital:first-child{ grid-column: 1 / -1; }
+}
+
+/* 링크처럼 보이는 버튼. 푸터의 '홈으로' 가 이걸 쓴다. */
+.footer button.link,
+.hint button.link{
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--odi-accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.interlude .hint{
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--odi-muted);
+}

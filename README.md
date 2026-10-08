@@ -310,3 +310,8 @@ ros2 run odi_curiosity curiosity_node                  # 호기심 점수 엔진
 | OOO | 모바일 앱 / UI |
 
 <!-- 실제 팀원 및 역할로 교체하세요 -->
+
+## 실행 코드 정리 브랜치
+
+`cleanup/assambly4`는 정상 동작 기준 브랜치에서 초기 더미 노드와 미사용 파일을
+정리한 버전입니다. [제거 범위, 검증 결과 및 적용 안내](docs/cleanup.md)를 참고하세요.

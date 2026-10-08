@@ -1,0 +1,4 @@
+setuptools>=30.3.0,<80
+openai==3.5.0
+Brotli>=1.2.0,<2.0.0
+ultralytics>=8.0.0,<9.0.0

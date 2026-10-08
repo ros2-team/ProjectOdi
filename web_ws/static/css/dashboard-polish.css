@@ -1,0 +1,146 @@
+/* Final home-dashboard refinements.
+   Kept separate from dashboard.css so the layout can be tuned without touching
+   the mission/state styles that already work. */
+
+/* The right panel should be a compact status card, not a full-height column. */
+.live-card {
+  grid-row: 1;
+  align-self: start;
+  min-height: 0;
+}
+
+.live-card .section-heading {
+  margin-bottom: 18px;
+}
+
+.today-status {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 16px;
+  margin: 0 0 18px;
+  padding: 16px 17px;
+  border: 1px solid #eee5d2;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #fff9e9, #fffdf7);
+}
+
+.today-status .today-label {
+  grid-column: 1 / -1;
+  color: #8b806b;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .08em;
+}
+
+.today-status strong {
+  color: #242834;
+  font-family: var(--data);
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+.today-status .today-dot {
+  align-self: center;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #78a36e;
+  box-shadow: 0 0 0 6px rgba(120, 163, 110, .12);
+}
+
+.today-status p {
+  grid-column: 1 / -1;
+  margin: 5px 0 0;
+  color: #777063;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+/* Hero copy follows the actual ODI project description. */
+.idle .welcome h1 .odi-word {
+  display: inline-block;
+  color: #eebc32;
+  letter-spacing: -1px;
+}
+
+.hero-cta {
+  margin-top: 24px;
+  min-width: 190px;
+  padding: 13px 22px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ffd85c, #ffe68e);
+  color: #40351f;
+  font: 600 13px var(--ui);
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(181, 137, 28, .14);
+  transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease;
+}
+
+.hero-cta:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(181, 137, 28, .2);
+}
+
+.hero-cta:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+/* Sidebar uses only functions that already exist in the project. */
+.site-header nav a::before {
+  width: 16px;
+  text-align: center;
+  color: #7b705d;
+  font-size: 15px;
+}
+
+.site-header nav a[data-nav="home"]::before { content: "⌂"; }
+.site-header nav a[data-nav="explore"]::before { content: "◇"; }
+.site-header nav a[data-nav="diary"]::before { content: "▤"; }
+.site-header nav a[data-nav="normal"]::before { content: "○"; }
+
+.site-header nav a.nav-action[aria-disabled="true"] {
+  color: #aaa393;
+  cursor: default;
+}
+
+.site-header nav a.nav-action[aria-disabled="true"]::before {
+  color: #bbb29e;
+}
+
+/* Camera is supporting information inside '오늘의 오디', not the headline. */
+.live-card .watch {
+  margin-top: 0;
+}
+
+.live-card .watchfoot span:first-child {
+  color: #5f594d;
+  font-weight: 500;
+}
+
+/* Recent diaries stay text-first until the real representative-photo field is
+   available. We intentionally do not draw fake thumbnails with CSS. */
+.memory-section {
+  grid-row: auto;
+}
+
+@media (max-width: 980px) {
+  .live-card {
+    grid-row: auto;
+  }
+
+  .today-status {
+    align-self: start;
+  }
+}
+
+@media (max-width: 680px) {
+  .hero-cta {
+    margin-top: 18px;
+  }
+
+  .today-status {
+    margin-bottom: 14px;
+  }
+}

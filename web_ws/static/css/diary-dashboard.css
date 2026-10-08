@@ -1,0 +1,37 @@
+/* Diary-only layout; shared sidebar comes from dashboard.css. */
+.diary-page #page{max-width:1280px;margin:0 auto;min-height:75vh}
+.journal-intro{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:32px 40px;border:1px solid #ece3cf;border-radius:24px;background:linear-gradient(115deg,#fff0ba,#fff9e6 70%,#f1f6ed)}
+.journal-intro h1{font-size:clamp(26px,3vw,38px);line-height:1.45;letter-spacing:-1.4px;margin:12px 0;font-weight:500;word-break:keep-all}
+.journal-intro p{font-size:13px;color:#766e60;word-break:keep-all}
+.journal-intro img{width:200px;height:180px;object-fit:contain}
+.journal-heading{display:flex;align-items:center;justify-content:space-between;margin:32px 0 18px}
+.journal-heading h2{font-size:21px;font-weight:500}
+.journal-heading>span{font-size:12px;color:#756d60}
+.journal-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+.journal-card{display:flex;flex-direction:column;overflow:hidden;border:1px solid #e8dfcc;border-radius:18px;background:#fffef9;color:#343129;text-decoration:none;transition:transform .2s,border-color .2s}
+.journal-card:hover{transform:translateY(-3px);border-color:#cdb77b}
+.journal-photo{aspect-ratio:4/3;background:#f2eedf;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.journal-photo img{width:100%;height:100%;object-fit:contain;display:block}
+.photo-missing{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#7c715b;font-size:12px;background:linear-gradient(135deg,#fff4cf,#f1eee1)}
+.photo-missing>span:first-child{font-size:32px;color:#b89847}
+.journal-card-copy{display:flex;flex-direction:column;flex:1;padding:20px}
+.journal-meta{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#81745f}
+.journal-card h3{font-family:var(--voice);font-size:18px;font-weight:400;line-height:1.75;word-break:keep-all;overflow-wrap:anywhere;margin:14px 0 22px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.journal-read{display:flex;justify-content:space-between;margin-top:auto;font-size:12px;color:#856b32}
+.journal-empty{padding:70px 24px;text-align:center;border:1px dashed #d9c99f;border-radius:20px;background:#fffcf1}
+.journal-empty h2{font-size:22px;font-weight:500;word-break:keep-all}
+.journal-empty p{font-size:14px;color:#7c715e;margin:14px 0 24px}
+.journal-empty a{display:inline-block;background:#ffe08a;padding:12px 24px;border-radius:999px;color:#534425;text-decoration:none}
+.journal-back{display:block;width:min(100%,1080px);text-decoration:none;color:#7c693f;font-size:13px;margin:4px auto 22px}
+.diary-page .diary{width:min(100%,1080px);max-width:none;margin:0 auto;padding:42px 56px 52px;box-shadow:0 15px 50px #795c1810}
+.diary-page .cover h1{font-size:34px;word-break:keep-all}
+.diary-page .said-big{font-size:20px;line-height:2;word-break:keep-all;overflow-wrap:anywhere;text-align:left;padding-left:28px;padding-right:28px}
+.diary-page .blk{margin:44px 0;padding:0 28px 36px;border-bottom:1px solid #eee6d4}
+.diary-page .blk p{word-break:keep-all;overflow-wrap:anywhere}
+.diary-page .blk .shot{border:1px solid #eae2d0}
+.diary-page .cover .stats span{background:#f6f1e3;border-radius:999px;padding:6px 12px}
+.diary-page .route{margin-left:28px;margin-right:28px}
+.diary-page .footer{margin-left:28px;margin-right:28px}
+.diary-page .interlude{max-width:1080px;margin:0 auto}
+@media(max-width:1200px){.journal-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.journal-intro{padding:28px}.diary-page .diary{width:100%;padding:34px 32px 46px}.journal-back{width:100%}.diary-page .said-big,.diary-page .blk,.diary-page .route,.diary-page .footer{margin-left:0;margin-right:0;padding-left:0;padding-right:0}}
+@media(max-width:680px){.journal-intro{padding:24px;gap:0}.journal-intro img{display:none}.journal-intro h1{font-size:27px}.journal-grid{grid-template-columns:1fr}.journal-card-copy{padding:20px}.diary-page .diary{padding:20px 16px}.diary-page .cover h1{font-size:25px}.diary-page .said-big{font-size:16px;padding:20px}.diary-page .blk{padding-left:0;padding-right:0}.journal-heading{margin-top:24px}.journal-empty{padding:48px 20px}.diary-page .cover .stats{gap:8px}}

@@ -7,7 +7,9 @@ Odi_ws/install/
 Odi_ws/log/
 
 # WEB dump file
-web_ws/static/media/
+web_ws/static/media/*
+!web_ws/static/media/illustrations/
+!web_ws/static/media/odi-companion.svg
 
 # 기존 작업 백업
 Odi_ws_backup/
@@ -268,3 +270,4 @@ Odi_ws/src/turtlebot3_msgs/
 
 # AI 모델 가중치 파일 무시
 *.pt
+
