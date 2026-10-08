@@ -18,7 +18,7 @@ case "$mode" in
   *) echo 'Usage: bash scripts/assambly3.sh check|robot|app|preview|live'; exit 2 ;;
 esac
 if [[ ! -f /opt/ros/humble/setup.bash || ! -f Odi_ws/install/setup.bash ]]; then
-  echo 'ROS Humble 또는 이 작업 폴더의 빌드 결과가 없습니다. docs/assambly3_testing.md를 확인하세요.' >&2
+  echo 'ROS Humble 또는 이 작업 폴더의 빌드 결과가 없습니다. ROS Humble을 설치하고 Odi_ws에서 colcon build --symlink-install을 실행하세요.' >&2
   exit 1
 fi
 source /opt/ros/humble/setup.bash

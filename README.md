@@ -291,15 +291,7 @@ ros2 run odi_curiosity curiosity_node                  # 호기심 점수 엔진
 
 ---
 
-## 11. 시연
-
-| 자율 탐사 | Pan-Tilt 추적 | 호기심 발동 |
-|---|---|---|
-| <img src="docs/images/demo_explore.gif" width="260"> | <img src="docs/images/demo_tracking.gif" width="260"> | <img src="docs/images/demo_curiosity.gif" width="260"> |
-
----
-
-## 12. 팀 구성
+## 11. 팀 구성
 
 | 이름 | 담당 |
 |---|---|
@@ -311,7 +303,6 @@ ros2 run odi_curiosity curiosity_node                  # 호기심 점수 엔진
 
 <!-- 실제 팀원 및 역할로 교체하세요 -->
 
-## 실행 코드 정리 브랜치
+## 실행 코드
 
-`cleanup/assambly4`는 정상 동작 기준 브랜치에서 초기 더미 노드와 미사용 파일을
-정리한 버전입니다. [제거 범위, 검증 결과 및 적용 안내](docs/cleanup.md)를 참고하세요.
+최종 구현은 `main`에 통합되어 있습니다. 테스트와 개발 문서는 실행 트리에서 정리했으며, 이전 자료는 Git 커밋 이력에서 확인할 수 있습니다.
