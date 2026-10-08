@@ -26,8 +26,9 @@ ODI는 주변을 탐험하다 물체를 발견하면 과거 관찰 기록과 비
 
 | 팀원 | 담당 영역 |
 | --- | --- |
-| 김동우 · [Ssu4645](https://github.com/Ssu4645) | 기획, 소프트웨어 구조 설계, Mission Manager·Behavior Executor, World Memory·Reflection 및 API 기반 기록 처리, 시스템 통합 |
-| 김도경 · [ehrud2235](https://github.com/ehrud2235) | 하드웨어, 인지 기능, 로봇 테스트 |
+| 김동우[Ssu4645](https://github.com/Ssu4645) | 기획, 소프트웨어 구조 설계, Mission Manager·Behavior Executor, World Memory·Reflection 및 API 기반 기록 처리, 시스템 통합 |
+| 김도경[ehrud2235](https://github.com/ehrud2235) | 하드웨어 구성, Yolo 인지 구현, 관찰 주행 구현, 로봇 테스트 |
+| 윤여진[ehrud2235](https://github.com/ehrud2235) | 웹 기획 및 개발, Curiosity 호기심 판단 노드 |
 
 아래 기능은 팀 전체의 구현 결과입니다. 김동우의 주요 기여는 기능 사이의 상태 전환과 인터페이스를 설계하고, 관찰 기록이 저장·활용되는 흐름을 연결한 부분입니다.
 
