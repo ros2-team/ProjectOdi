@@ -3,7 +3,7 @@
 > 스스로 탐험하고, 발견한 경험을 기억해 사진 일기로 남기는 ROS 2 기반 반려 로봇
 
 <p align="center">
-  <img src="web_ws/static/media/illustrations/odi-reflection.webp" alt="탐험을 기록하는 ODI의 콘셉트 일러스트" width="640">
+  <img src="web_ws/static/media/illustrations/odi-readme-cover.jpg" alt="ODI 탐험 로봇 타이틀 이미지" width="900">
 </p>
 
 **[실제 로봇 시연 영상](https://youtu.be/1bXQdc1NZD0)** · [핵심 코드](#핵심-코드) · [실행 방법](#실행-방법)
