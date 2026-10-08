@@ -117,8 +117,8 @@ ros2 launch odi_bringup odi_system.launch.py use_application:=false
   the active mission.
 - A new mission clears detection episodes, discovery records, route history and
   object markers for the live view. Previously saved diaries remain in MySQL.
-  The running SLAM map is retained. Starting in an already mapped space may
-  therefore switch to `ROAM`; object detection is active in both exploration modes.
+  Each new mission requests fresh mapping during PREPARING (see the mapping
+  section below). Object detection is active in both FRONTIER and ROAM modes.
 - YOLO keeps publishing the camera preview while idle, but only sends mission
   detection batches during `EXPLORING`. It retries every
   `batch_publish_interval_sec` (default `1.0`), and Behavior ignores handled IDs.
@@ -131,16 +131,7 @@ After updating, rebuild `odi_behavior_executor`, `odi_detection`,
 `odi_reflection` and `odi_bringup`, then restart the application terminal
 (`odi_project_start`). Refresh the browser to load the updated JavaScript.
 
-Offline regressions, run from the repository root:
-
-```bash
-python3 -m unittest discover -s tests -v
-```
-
-These tests use the production callbacks with fake ROS/model/service dependencies.
-The HTTP route tests additionally need Flask, flask-sock and PyMySQL from
-`web_ws/requirements.txt`; they are explicitly skipped if those packages are absent.
-They do not replace hardware testing of navigation, cancellation or camera quality.
+Development tests were removed from the main runtime tree. Previous test files remain in Git history.
 
 For the robot check, repeat **start → return home → diary → dashboard → start**
 three times, including one mission with no observations. Verify that the dashboard
