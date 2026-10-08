@@ -24,7 +24,7 @@ ODI는 주변을 탐험하다 물체를 발견하면 과거 관찰 기록과 비
 
 ## 팀 구성과 담당 역할
 
-| 팀원&nbsp;이름 | 담당 영역 |
+| 팀구성 | 담당 영역 |
 | --- | --- |
 | 김동우 | 기획, 소프트웨어 구조 설계, Mission Manager·Behavior Executor, World Memory·Reflection 및 API 기반 기록 처리, 시스템 통합 |
 | 김도경 | 하드웨어 구성, Yolo 인지 구현, 관찰 주행 구현, 로봇 테스트 |
